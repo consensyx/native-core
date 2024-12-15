@@ -1,0 +1,27 @@
+# Compiler files
+cache/
+out/
+
+*/node_modules
+*node_modules
+.env
+*.DS_Store
+.idea
+.husky
+.vscode
+
+coverage
+coverage.json
+typechain
+config.json
+contract.addresses
+deployedAddresses
+
+# Ignores development broadcast logs
+/broadcast
+
+# Docs
+docs/
+
+.cursor* 
+cursor* 

@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.28;
+
+/// @title Custom error definitions for the protocol
+/// @notice This library contains all the error definitions used throughout the contract
+/// @dev The errors are arranged in alphabetical order
+library ErrorsLib {
+    /// @notice Thrown when array lengths don't match in a function requiring equal-length arrays
+    error ArraysLengthMismatch();
+
+    /// @notice Thrown when deposit amount is below minimum required
+    error BelowMinimumDeposit();
+
+    /// @notice Thrown when caller is not the authorized epoch updater
+    error CallerNotEpochUpdater();
+
+    /// @notice Thrown when caller is not an authorized liquidator
+    error CallerNotLiquidator();
+
+    /// @notice Thrown when caller is not a trader or authorized settler
+    error CallerNotTraderSettler();
+
+    /// @notice Thrown when caller is not the WETH9 contract
+    error CallerNotWETH9();
+
+    /// @notice Thrown when epoch update is attempted before minimum interval
+    error EpochUpdateInCoolDown();
+
+    /// @notice Thrown when LP token exchange rate increases more than allowed
+    error ExchangeRateIncreaseTooMuch();
+
+    /// @notice Thrown when an external contract call fails
+    error ExternalCallFailed(address target, bytes4 selector);
+
+    /// @notice Thrown when there are insufficient funding fees to withdraw
+    error InsufficientFundingFees();
+
+    /// @notice Thrown when LP token shares are insufficient
+    error InsufficientShares();
+
+    /// @notice Thrown when token amount is insufficient for operation
+    error InsufficientTokenAmount();
+
+    /// @notice Thrown when an amount parameter is invalid
+    error InvalidAmount();
+
+    /// @notice Thrown when fee rate in basis points exceeds maximum (10000)
+    error InvalidFeeBips();
+
+    /// @notice Thrown when credit would be invalid after operation
+    error InvalidCreditAfterOperation();
+
+    /// @notice Thrown when LP token address is invalid
+    error InvalidLPToken();
+
+    /// @notice Thrown when market (LP token) is invalid
+    error InvalidMarket();
+
+    /// @notice Thrown when position update amount is invalid
+    error InvalidPositionUpdateAmount();
+
+    /// @notice Thrown when RFQ pool address is invalid
+    error InvalidRFQPool();
+
+    /// @notice Thrown when signature verification fails
+    error InvalidSignature();
+
+    /// @notice Thrown when signer is not authorized
+    error InvalidSigner();
+
+    /// @notice Thrown when WETH9 unwrap amount is zero or exceeds balance
+    error InvalidWETH9Amount();
+
+    /// @notice Thrown when widget fee rate is invalid
+    error InvalidWidgetFeeRate();
+
+    /// @notice Thrown when widget fee signature is invalid
+    error InvalidWidgetFeeSignature();
+
+    /// @notice Thrown when nonce is used
+    error NonceUsed();
+
+    /// @notice Thrown when there is no yield to distribute
+    error NoYieldToDistribute();
+
+    /// @notice Thrown when output amount is less than minimum required
+    error NotEnoughAmountOut(uint256 amountOut, uint256 amountOutMinimum);
+
+    /// @notice Thrown when insufficient token output received
+    error NotEnoughTokenOutReceived();
+
+    /// @notice Thrown when caller is not the credit vault
+    error OnlyCreditVault();
+
+    /// @notice Thrown when caller is not the epoch updater
+    error OnlyEpochUpdater();
+
+    /// @notice Thrown when caller is not the fee withdrawer
+    error OnlyFeeWithdrawer();
+
+    /// @notice Thrown when caller is not an authorized liquidator
+    error OnlyLiquidator();
+
+    /// @notice Thrown when caller is not an LP token
+    error OnlyLpToken();
+
+    /// @notice Thrown when caller is not a native pool
+    error OnlyNativePool();
+
+    /// @notice Thrown when caller is not the native router
+    error OnlyNativeRouter();
+
+    /// @notice Thrown when caller is not the owner
+    error OnlyOwner();
+
+    /// @notice Thrown when caller is not an authorized trader
+    error OnlyTrader();
+
+    /// @notice Thrown when caller is not the WETH9 contract
+    error OnlyWETH9();
+
+    /// @notice Thrown when order has expired
+    error OrderExpired();
+
+    /// @notice Thrown when arithmetic operation would overflow
+    error Overflow();
+
+    /// @notice Thrown when LP pool has no deposits yet
+    error PoolNotInitialized();
+
+    /// @notice Thrown when RFQ quote has expired
+    error RFQQuoteExpired();
+
+    /// @notice Thrown when request has expired
+    error RequestExpired();
+
+    /// @notice Thrown when token is already listed
+    error TokenAlreadyListed();
+
+    /// @notice Thrown when trading is paused
+    error TradePaused();
+
+    /// @notice Thrown when transfer to self is attempted
+    error TransferSelf();
+
+    /// @notice Thrown when unexpected msg.value is sent
+    error UnexpectedMsgValue();
+
+    /// @notice Thrown when zero address is provided
+    error ZeroAddress();
+
+    /// @notice Thrown when amount is zero
+    error ZeroAmount();
+
+    /// @notice Thrown when input is zero or empty
+    error ZeroInput();
+}
