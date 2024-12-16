@@ -1,17 +1,43 @@
-## Foundry
+# Native v2 Core
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+## What's new in v2
 
-Foundry consists of:
+### Auto-sign
+ which is built on the `RFQ` (Request for Quote)
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+ **RFQ Mechanism** 
 
-## Documentation
+1. The swapper submits a price inquiry request to the Native API.
+2. The Native backend forwards this inquiry to a partner private market maker (`PMM`).
+3. The PMM returns a signed quote.
+4. The Native backend builds all information into `calldata` and sends it back to the swapper.
+5. The swapper invokes the NativeRouter contract to complete the trade.
 
-https://book.getfoundry.sh/
+ **Auto-sign Mechanism** 
+
+ 1. Market makers actively push their signed order books to the Native backend.
+ 2. The Native backend uses this order book to match and complete transactions directly based on the swapper's trade request.
+
+ **Benefits for Auto-sign**
+ 1. The swapper's trade request interacts solely with the Native API.
+ 3. This streamlined process significantly reduces transaction latency and improve the success rate
+
+### Funding rate Fee
+
+The `V1` LP token was based on Compound's `cToken`, accruing borrow fees as interest. To streamline the contract, we removed unnecessary Compound code.
+
+In `V2`, market makers borrow LP token assets from the `Credit Vault` for quotes, with a funding rate mechanism replacing automatic interest. The funding fee rate updates every 8 hours. Timely repayment incurs no fee; otherwise, the fee is distributed to LP holders via the `distributeYield` interface.
+
+## Architecture
+
+Native `V2` still follows the Native `V1` architecture, with slight differences in the `Auto-sign` flow. For details, you can refer to the the Auto-sign section above.
+
+# WIP
+
+* more documentation 
+* more `foundry`invariant test 
+* `echina `(property-based) test
+* formal verification `certora`
 
 ## Usage
 
@@ -31,36 +57,4 @@ $ forge test
 
 ```shell
 $ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
 ```
