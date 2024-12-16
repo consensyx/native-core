@@ -4,11 +4,15 @@
 
 ### Remove Compound Code
 
-The V1 code was overly bloated, inheriting too much unnecessary code from `Compound`.
+The V1 code was overly bloated, inheriting too much unnecessary code from `Compound`
 
 ### Remove Upgradeable Model
  
-We discarded `upgradeable` model and continue using `non-upgradeable` model, we believe this is more safer.
+We discarded `upgradeable` model and continue using `non-upgradeable` model, we believe this is more safer
+
+### New LP Token 
+
+LP token is a `yield-bearing` token, similar to `Lido`'s `stETH`
 
 ### Auto-sign
 
