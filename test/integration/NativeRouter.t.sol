@@ -260,8 +260,9 @@ contract NativeRouterTest is BaseTest {
             orderBookDigest: orderBookDigest
         });
 
-        // keccak256("AUTOSIGN(uint256 nonce,address recipient,address sellerToken,address buyerToken,address sellerTokenAmount,address buyerTokenAmount,uint256 deadline)")
-        bytes32 AUTO_SIGN_SIGNATURE_HASH = 0x413b57dcf6b1f3987cb232981f0871744ebe2dd46e25a0d16f50c4fd66f1f144;
+        bytes32 AUTO_SIGN_SIGNATURE_HASH = keccak256(
+            "AUTOSIGN(uint256 nonce,address recipient,address sellerToken,address buyerToken,uint256 sellerTokenAmount,uint256 buyerTokenAmount,uint256 deadline)"
+        );
 
         // Generate auto-sign signature using deployer's key
         bytes32 autoSignDigest = _hashTypedDataV4(

@@ -29,5 +29,5 @@ bytes32 constant RFQ_QUOTE_WIDGET_SIGNATURE_HASH =
 
 /// @dev The EIP-712 typeHash for Auto-sign Authorization.
 bytes32 constant AUTO_SIGN_SIGNATURE_HASH = keccak256(
-    "AUTOSIGN(uint256 nonce,address recipient,address sellerToken,address buyerToken,address sellerTokenAmount,address buyerTokenAmount,uint256 deadline)"
+    "AUTOSIGN(uint256 nonce,address recipient,address sellerToken,address buyerToken,uint256 sellerTokenAmount,uint256 buyerTokenAmount,uint256 deadline)"
 );
