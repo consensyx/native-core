@@ -34,8 +34,8 @@ library SignatureUtils {
         address sender,
         address routerAddress
     ) internal view returns (bytes32) {
-        // keccak256("RFQTQuote(bytes32 quote,address widgetFeeSigner,address widgetFeeRecipient,uint256 widgetFeeRate)")
-        bytes32 RFQ_QUOTE_WIDGET_SIGNATURE_HASH = 0xb201bfccac55f76ea682ca784c5c76bf35169274d36136f4ffd0bf77f428afbf;
+        bytes32 RFQ_QUOTE_WIDGET_SIGNATURE_HASH =
+            keccak256("RFQTQuote(bytes32 quote,address widgetFeeRecipient,uint256 widgetFeeRate)");
 
         bytes32 quoteHash = _generateQuoteHash(quote, sender);
         bytes32 widgetFeeStructHash =

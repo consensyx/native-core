@@ -25,7 +25,7 @@ bytes32 constant ORDER_SIGNATURE_HASH = keccak256(
 
 /// @dev The EIP-712 typeHash for RFQ Quote Widget Authorization.
 bytes32 constant RFQ_QUOTE_WIDGET_SIGNATURE_HASH =
-    keccak256("RFQTQuote(bytes32 quote,address widgetFeeSigner,address widgetFeeRecipient,uint256 widgetFeeRate)");
+    keccak256("RFQTQuote(bytes32 quote,address widgetFeeRecipient,uint256 widgetFeeRate)");
 
 /// @dev The EIP-712 typeHash for Auto-sign Authorization.
 bytes32 constant AUTO_SIGN_SIGNATURE_HASH = keccak256(
