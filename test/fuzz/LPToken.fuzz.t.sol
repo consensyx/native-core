@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {BaseTest} from "../BaseTest.t.sol";
 import {LPToken} from "../../src/LPToken.sol";
+import "../../src/libraries/ConstantsLib.sol";
 import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract LPTokenFuzzTest is BaseTest {
     // Set reasonable amount range to avoid overflow
@@ -88,11 +90,12 @@ contract LPTokenFuzzTest is BaseTest {
         uint256 redeemSharesPercent,
         uint256 earlyWithdrawFeeBips
     ) public {
-        // Limit deposit amount range
-        vm.assume(depositAmount >= lpUSDC.minDeposit() && depositAmount <= MAX_DEPOSIT);
+        // Bound input values instead of using assume
+        depositAmount = bound(depositAmount, lpUSDC.minDeposit(), MAX_DEPOSIT);
+        redeemSharesPercent = bound(redeemSharesPercent, 1, 10_000); // 0.01% to 100%
+        earlyWithdrawFeeBips = bound(earlyWithdrawFeeBips, 0, MAX_EARLY_WITHDRAW_FEE_BIPS);
 
         // Setup early withdrawal fee
-        vm.assume(earlyWithdrawFeeBips <= 10_000);
         vm.prank(deployer);
         lpUSDC.setEarlyWithdrawFeeBips(earlyWithdrawFeeBips);
 
@@ -100,9 +103,10 @@ contract LPTokenFuzzTest is BaseTest {
         uint256 mintedShares = lpUSDC.deposit(depositAmount);
 
         // Calculate redeemShares as a percentage of mintedShares
-        vm.assume(redeemSharesPercent <= 10_000); // Maximum 100%
         uint256 redeemShares = (mintedShares * redeemSharesPercent) / 10_000;
-        vm.assume(redeemShares > 0);
+
+        // Skip test if redeemShares is 0
+        if (redeemShares == 0) return;
 
         // Record states before redeem
         uint256 initialBalance = USDC.balanceOf(address(this));

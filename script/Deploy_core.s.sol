@@ -51,9 +51,9 @@ contract DeployCoreScript is Utils {
         // 5 Set credit vault configuration
         creditVault.setNativePool(address(rfqPool), true);
         creditVault.setSigner(deployer);
+        creditVault.setLiquidator(deployer, true);
         creditVault.setEpochUpdater(deployer);
         creditVault.setFeeWithdrawer(payable(deployer));
-        // TODO: creditVault.setOracle();
 
         // 6 Set allowance for RFQ Pool
         ICreditVault.TokenAmountUint[] memory allowances = new ICreditVault.TokenAmountUint[](2);

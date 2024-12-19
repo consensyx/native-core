@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.28;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ISignatureTransfer} from "@permit2/interfaces/ISignatureTransfer.sol";
 import {EIP712, ECDSA} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
 import {IWETH9} from "./interfaces/IWETH9.sol";
@@ -21,11 +24,14 @@ import {NativeRFQPool} from "./NativeRFQPool.sol";
 import {ExternalSwap} from "./libraries/ExternalSwap.sol";
 
 contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransient, Multicall {
+    using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
     /// @dev Address of the Wrapped Ether (WETH9) contract
     address public WETH9;
 
+    // Permit2 contract address
+    ISignatureTransfer public constant PERMIT2 = ISignatureTransfer(0x000000000022D473030F116dDEE9F6B43aC78BA3);
     /// @dev Address of the CreditVault contract that manages credit and native pools
     address public vault;
 
@@ -38,14 +44,15 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @dev Mapping to track which external routers are whitelisted for swaps
     mapping(address => bool) public whitelistRouter;
 
+    /// @dev token -> total widget fee
+    mapping(address => uint256) public permitWidgetFee;
+
     /*//////////////////////////////////////////////////////////////////////////
                                      RECEIVE FUNCTION
     //////////////////////////////////////////////////////////////////////////*/
 
     receive() external payable {
-        if (msg.sender != WETH9) {
-            revert ErrorsLib.OnlyWETH9();
-        }
+        require(msg.sender == WETH9, ErrorsLib.OnlyWETH9());
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -53,7 +60,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     //////////////////////////////////////////////////////////////////////////*/
 
     constructor(address _vault, address _WETH9, address _signer) EIP712("Native Router", "1") {
-        if (_vault == address(0) || _WETH9 == address(0)) revert ErrorsLib.ZeroAddress();
+        require(_vault != address(0) && _WETH9 != address(0), ErrorsLib.ZeroAddress());
 
         vault = _vault;
         WETH9 = _WETH9;
@@ -67,14 +74,13 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
 
     /// @notice Execute a Request for Quote (RFQ) trade based on market maker's signed quote
     /// @dev This function facilitates trades between swappers and Native's partnered market makers:
-    ///      1. Swapper requests quote from Native API
-    ///      2. Market maker provides and signs the quote
-    ///      3. Native backend builds calldata with quote and signature
-    ///      4. Swapper executes trade using the calldata
     function tradeRFQT(RFQTQuote memory quote) external payable override nonReentrant {
-        _validateQuote(quote.effectiveSellerTokenAmount, quote.sellerTokenAmount, quote.deadlineTimestamp);
+        // Note: 10_000 (100%) is just a theoretical maximum
+        require(quote.widgetFee.feeRate <= 10_000, ErrorsLib.InvalidWidgetFeeRate());
+        require(quote.effectiveSellerTokenAmount <= quote.sellerTokenAmount, ErrorsLib.InvalidAmount());
+        require(block.timestamp <= quote.deadlineTimestamp, ErrorsLib.QuoteExpired());
 
-        _verifyWidgetSignature(quote);
+        _verifyRFQSignature(quote);
 
         bool isRFQPool = CreditVault(vault).isNativePools(quote.pool);
         // address(this) is used for externalSwap
@@ -105,71 +111,113 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
                 order, quote.effectiveSellerTokenAmount, quote.recipient, address(this), quote.externalSwapCalldata
             );
 
-            if (actualAmountOut < quote.amountOutMinimum) {
-                revert ErrorsLib.NotEnoughAmountOut(actualAmountOut, quote.amountOutMinimum);
-            }
+            require(
+                actualAmountOut >= quote.amountOutMinimum,
+                ErrorsLib.NotEnoughAmountOut(actualAmountOut, quote.amountOutMinimum)
+            );
         } else {
             revert ErrorsLib.InvalidRFQPool();
         }
     }
 
-    /// @notice Execute an auto-sign trade based on pre-signed market maker quotes
-    /// @dev This function enables automated trading using market makers' pre-signed quotes:
-    ///      1. Market makers periodically submit signed quotes with expiry to Native API
-    ///      2. When swapper requests a trade, Native API matches it with available quotes
-    ///      3. If a match is found, trade executes automatically without additional market maker interaction
-    /// @dev Key differences from RFQT:
-    ///      1. Uses pre-signed quotes instead of real-time signatures
-    ///      2. Requires additional order book verification
-    ///      3. Enables faster execution as no real-time market maker interaction needed
-    function tradeAutoSign(AutoSignQuote memory quote) external payable override nonReentrant {
-        _validateQuote(quote.effectiveSellerTokenAmount, quote.sellerTokenAmount, quote.deadline);
-
-        _verifyAutoSignature(quote);
-
-        if (!CreditVault(vault).isNativePools(quote.pool)) revert ErrorsLib.InvalidRFQPool();
-
-        address payee = NativeRFQPool(payable(quote.pool)).treasury();
-
-        quote.effectiveSellerTokenAmount = _transferSellerToken(
-            quote.multiHop, payee, quote.sellerToken, quote.effectiveSellerTokenAmount, quote.widgetFee
+    /// @notice Executes a trade where the swapper uses Permit2 to authorize token transfer
+    /// @param quote The quote details containing trade parameters (amounts, tokens, deadlines)
+    /// @param swapperPermit Permit2 transfer authorization details
+    /// @param swapperSig Signature from the swapper authorizing the transfer via Permit2
+    function fillOrder(
+        PermitQuote memory quote,
+        ISignatureTransfer.PermitTransferFrom calldata swapperPermit,
+        bytes calldata swapperSig
+    ) external nonReentrant {
+        // Validate widget fee rate
+        require(quote.widgetFee.feeRate <= 10_000, ErrorsLib.InvalidWidgetFeeRate());
+        // Validate input amounts and expiration
+        require(quote.effectiveAmountIn <= quote.amountIn, ErrorsLib.InvalidAmount());
+        require(
+            block.timestamp <= quote.deadline && block.timestamp <= swapperPermit.deadline, ErrorsLib.QuoteExpired()
         );
 
-        if (nonces[quote.nonce]) {
-            revert ErrorsLib.NonceUsed();
+        // Prevent replay attacks
+        require(!nonces[quote.nonce], ErrorsLib.NonceUsed());
+
+        // Verify permit2 token details match the quote
+        require(
+            swapperPermit.permitted.token == quote.tokenIn && swapperPermit.permitted.amount == quote.amountIn,
+            ErrorsLib.Permit2TokenMismatch()
+        );
+
+        // Verify pool is valid
+        require(CreditVault(vault).isNativePools(quote.pool), ErrorsLib.InvalidRFQPool());
+
+        // Verify order signature
+        _verifyOrderSignature(quote);
+
+        // Note: Since router will charges widget fee, can't transfer directly to recipient
+        // Execute permit2 transfer: swapper -> router
+        PERMIT2.permitTransferFrom(
+            swapperPermit,
+            ISignatureTransfer.SignatureTransferDetails({to: address(this), requestedAmount: quote.amountIn}),
+            quote.swapper,
+            swapperSig
+        );
+
+        // Calculate and handle widget fee if applicable
+        uint256 widgetFee = quote.widgetFee.feeRate > 0 ? (quote.amountIn * quote.widgetFee.feeRate) / 10_000 : 0;
+
+        if (widgetFee > 0) {
+            quote.effectiveAmountIn -= widgetFee;
+            // Accumulate widget fee for withdrawal
+            permitWidgetFee[quote.tokenIn] += widgetFee;
         }
+
+        // Transfer tokens to market maker's treasury
+        IERC20(quote.tokenIn).safeTransfer(NativeRFQPool(payable(quote.pool)).treasury(), quote.effectiveAmountIn);
+
+        // Mark nonce as used
         nonces[quote.nonce] = true;
 
-        NativeRFQPool(payable(quote.pool)).tradeAutoSign(quote);
+        // Execute the trade on the RFQ pool
+        NativeRFQPool(payable(quote.pool)).fillOrder(quote);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                                     EMERGENCY CALL
+                                     ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Withdraw accumulated widget fees for multiple tokens
+    /// @param tokens Array of token addresses to withdraw fees from
+    /// @param recipient Address to receive the withdrawn fees
+    function withdrawWidgetFees(address[] calldata tokens, address recipient) external onlyOwner nonReentrant {
+        require(recipient != address(0), ErrorsLib.ZeroAddress());
+
+        for (uint256 i = 0; i < tokens.length; ++i) {
+            address token = tokens[i];
+
+            IERC20(token).safeTransfer(recipient, permitWidgetFee[token]);
+            permitWidgetFee[token] = 0;
+
+            emit WidgetFeesWithdrawn(recipient, token, permitWidgetFee[token]);
+        }
+    }
 
     /// @notice Emergency function to refund stuck ETH from the contract
     /// @dev Can only be called by contract owner in emergency situations
     /// @param recipient The address to receive the refunded ETH
     /// @param amount The amount of ETH to refund
     function refundETH(address recipient, uint256 amount) public payable onlyOwner nonReentrant {
-        if (address(this).balance > 0) TransferHelper.safeTransferETH(recipient, amount);
+        TransferHelper.safeTransferETH(recipient, amount);
         emit RefundETH(recipient, amount);
     }
 
     /// @notice Emergency function to refund stuck ERC20 tokens from the contract
     /// @dev Can only be called by contract owner in emergency situations
     /// @param token The address of the ERC20 token to refund
-    /// @param amount The amount of tokens to refund
     /// @param recipient The address to receive the refunded tokens
-    function refundERC20(address token, uint256 amount, address recipient) public payable onlyOwner nonReentrant {
-        uint256 balance = IERC20(token).balanceOf(address(this));
-        if (amount > balance) {
-            revert ErrorsLib.InsufficientTokenAmount();
-        }
-
-        if (balance > 0) {
-            TransferHelper.safeTransfer(token, recipient, balance);
-        }
+    /// @param amount The amount of tokens to refund
+    function refundERC20(address token, address recipient, uint256 amount) public payable onlyOwner nonReentrant {
+        TransferHelper.safeTransfer(
+            token, recipient, Math.min(IERC20(token).balanceOf(address(this)) - permitWidgetFee[token], amount)
+        );
     }
 
     /// @notice Emergency function to unwrap WETH9 stuck in the contract
@@ -177,9 +225,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @param amount The amount of WETH9 to unwrap
     /// @param recipient The address to receive the unwrapped ETH
     function unwrapWETH9(uint256 amount, address recipient) public payable onlyOwner nonReentrant {
-        if (amount == 0 || IWETH9(WETH9).balanceOf(address(this)) < amount) {
-            revert ErrorsLib.InvalidWETH9Amount();
-        }
+        require(amount > 0 && IWETH9(WETH9).balanceOf(address(this)) >= amount, ErrorsLib.InvalidWETH9Amount());
 
         uint256 beforeETHBalance = address(this).balance;
         IWETH9(WETH9).withdraw(amount);
@@ -187,21 +233,12 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
         TransferHelper.safeTransferETH(recipient, address(this).balance - beforeETHBalance);
     }
 
-    /*//////////////////////////////////////////////////////////////////////////
-                                ADMIN FUNCTIONS
-    //////////////////////////////////////////////////////////////////////////*/
-
     /// @notice Set the authorized signer for widget fee and auto-sign messages
     /// @dev Can only be called by contract owner
     /// @param _signer The new signer address to be set
-    /// @dev Security considerations:
-    ///      - Only owner can call (onlyOwner modifier)
-    ///      - Prevents setting zero address as signer
-    ///      - Emits SetSigner event for transparency
     function setSigner(address _signer) public onlyOwner {
-        if (_signer == address(0)) {
-            revert ErrorsLib.ZeroAddress();
-        }
+        require(_signer != address(0), ErrorsLib.ZeroAddress());
+
         signer = _signer;
         emit SetSigner(signer);
     }
@@ -211,9 +248,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @param routers Array of router addresses to be whitelisted/blacklisted
     /// @param values Array of boolean values corresponding to each router
     function setWhitelistRouter(address[] calldata routers, bool[] calldata values) external onlyOwner {
-        if (routers.length != values.length) {
-            revert ErrorsLib.ArraysLengthMismatch();
-        }
+        require(routers.length == values.length, ErrorsLib.ArraysLengthMismatch());
 
         for (uint256 i; i < routers.length; ++i) {
             whitelistRouter[routers[i]] = values[i];
@@ -232,16 +267,10 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
         WidgetFee memory widgetFee
     ) internal returns (uint256 effectiveSellerTokenAmount) {
         if (msg.value > 0 && !multiHop) {
-            if (sellerToken != address(0)) {
-                revert ErrorsLib.UnexpectedMsgValue();
-            }
-
-            if (sellerTokenAmount > msg.value) {
-                revert ErrorsLib.InvalidAmount();
-            }
+            require(sellerToken == address(0), ErrorsLib.UnexpectedMsgValue());
+            require(sellerTokenAmount <= msg.value, ErrorsLib.InvalidAmount());
 
             // slither-disable-next-line arbitrary-send-eth
-            // WETH9 is a trusted contract widely used in the ecosystem
             IWETH9(WETH9).deposit{value: sellerTokenAmount}();
 
             effectiveSellerTokenAmount = _chargeWidgetFee(widgetFee, sellerTokenAmount, WETH9, true);
@@ -264,37 +293,21 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
         address sellerToken,
         bool hasAlreadyPaid
     ) internal returns (uint256) {
-        if (widgetFee.feeRate > 0) {
-            if (widgetFee.feeRate > 10_000) {
-                revert ErrorsLib.InvalidWidgetFeeRate();
-            }
-            uint256 widgetFeeAmount = (amountIn * widgetFee.feeRate) / 10_000;
-            TransferHelper.safeTransferFrom(
-                sellerToken, hasAlreadyPaid ? address(this) : msg.sender, widgetFee.feeRecipient, widgetFeeAmount
-            );
-            emit WidgetFeeTransfer(widgetFee.feeRecipient, widgetFee.feeRate, widgetFeeAmount, sellerToken);
+        uint256 fee = widgetFee.feeRate > 0 ? (amountIn * widgetFee.feeRate) / 10_000 : 0;
 
-            amountIn -= widgetFeeAmount;
+        if (fee > 0) {
+            TransferHelper.safeTransferFrom(
+                sellerToken, hasAlreadyPaid ? address(this) : msg.sender, widgetFee.feeRecipient, fee
+            );
+            emit WidgetFeeTransfer(widgetFee.feeRecipient, widgetFee.feeRate, fee, sellerToken);
+
+            amountIn -= fee;
         }
 
         return amountIn;
     }
 
-    function _validateQuote(
-        uint256 effectiveSellerTokenAmount,
-        uint256 sellerTokenAmount,
-        uint256 deadlineTimestamp
-    ) internal view {
-        if (effectiveSellerTokenAmount > sellerTokenAmount) {
-            revert ErrorsLib.InvalidAmount();
-        }
-
-        if (deadlineTimestamp < block.timestamp) {
-            revert ErrorsLib.RFQQuoteExpired();
-        }
-    }
-
-    function _verifyWidgetSignature(RFQTQuote memory quote) internal view {
+    function _verifyRFQSignature(RFQTQuote memory quote) internal view {
         bytes32 quoteHash = keccak256(
             abi.encode(
                 quote.pool,
@@ -321,35 +334,28 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
             )
         );
 
-        address recoveredSigner = ECDSA.recover(digest, quote.widgetFeeSignature);
-
-        if (signer != recoveredSigner) {
-            revert ErrorsLib.InvalidWidgetFeeSignature();
-        }
+        require(signer == ECDSA.recover(digest, quote.widgetFeeSignature), ErrorsLib.InvalidSignature());
     }
 
-    function _verifyAutoSignature(AutoSignQuote memory quote) internal view {
+    function _verifyOrderSignature(PermitQuote memory quote) internal view {
         bytes32 digest = _hashTypedDataV4(
             keccak256(
                 abi.encode(
-                    AUTO_SIGN_SIGNATURE_HASH,
+                    FILL_ORDER_SIGNATURE_HASH,
                     quote.nonce,
                     quote.recipient,
-                    quote.sellerToken,
-                    quote.buyerToken,
-                    quote.sellerTokenAmount,
-                    quote.buyerTokenAmount,
+                    quote.tokenIn,
+                    quote.tokenOut,
+                    quote.amountIn,
+                    quote.amountOut,
                     quote.deadline
                 )
             )
         );
 
         address recoveredSigner = ECDSA.recover(digest, quote.signature);
-
         address recoveredMMSigner = ECDSA.recover(quote.orderBookDigest, quote.orderBookSig);
 
-        if (signer != recoveredSigner || recoveredMMSigner != quote.signer) {
-            revert ErrorsLib.InvalidSigner();
-        }
+        require(signer == recoveredSigner && quote.marketMaker == recoveredMMSigner, ErrorsLib.InvalidSignature());
     }
 }

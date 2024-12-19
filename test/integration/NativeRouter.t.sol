@@ -86,92 +86,92 @@ contract NativeRouterTest is BaseTest {
         assertEq(USDC.balanceOf(halo), haloInitialUsdc - expectedUsdcAmount, "Halo USDC balance incorrect");
     }
 
-    function test_tradeAutoSign() public {
-        setupPMM();
+    // function test_tradeAutoSign() public {
+    //     setupPMM();
 
-        // Mint WETH for Alice
-        deal(address(weth), alice, 10 ether);
+    //     // Mint WETH for Alice
+    //     deal(address(weth), alice, 10 ether);
 
-        // Store initial balances first
-        uint256 aliceInitialEth = weth.balanceOf(alice);
-        uint256 aliceInitialUsdc = USDC.balanceOf(alice);
-        uint256 vaultInitialEth = weth.balanceOf(address(creditVault));
-        uint256 vaultInitialUsdc = USDC.balanceOf(address(creditVault));
-        int256 haloInitialEthPosition = creditVault.positions(halo, address(weth));
-        int256 haloInitialUsdcPosition = creditVault.positions(halo, address(USDC));
+    //     // Store initial balances first
+    //     uint256 aliceInitialEth = weth.balanceOf(alice);
+    //     uint256 aliceInitialUsdc = USDC.balanceOf(alice);
+    //     uint256 vaultInitialEth = weth.balanceOf(address(creditVault));
+    //     uint256 vaultInitialUsdc = USDC.balanceOf(address(creditVault));
+    //     int256 haloInitialEthPosition = creditVault.positions(halo, address(weth));
+    //     int256 haloInitialUsdcPosition = creditVault.positions(halo, address(USDC));
 
-        // Calculate amounts
-        uint256 ethPriceInUsdc = 3000 * 10 ** 6;
-        uint256 sellAmount = _calculateSellAmount();
-        uint256 expectedUsdcAmount = sellAmount * ethPriceInUsdc / 1 ether;
+    //     // Calculate amounts
+    //     uint256 ethPriceInUsdc = 3000 * 10 ** 6;
+    //     uint256 sellAmount = _calculateSellAmount();
+    //     uint256 expectedUsdcAmount = sellAmount * ethPriceInUsdc / 1 ether;
 
-        // Create and execute the trade
-        IQuote.AutoSignQuote memory quote =
-            _createAutoSignQuote(haloKey, deployerKey, address(rfqPool), sellAmount, expectedUsdcAmount);
+    //     // Create and execute the trade
+    //     IQuote.AutoSignQuote memory quote =
+    //         _createAutoSignQuote(haloKey, deployerKey, address(rfqPool), sellAmount, expectedUsdcAmount);
 
-        vm.startPrank(alice);
-        weth.approve(address(router), sellAmount);
-        router.tradeAutoSign(quote);
-        vm.stopPrank();
+    //     vm.startPrank(alice);
+    //     weth.approve(address(router), sellAmount);
+    //     router.tradeAutoSign(quote);
+    //     vm.stopPrank();
 
-        // Verify results
-        _verifyTradeResults(
-            sellAmount,
-            expectedUsdcAmount,
-            aliceInitialEth,
-            aliceInitialUsdc,
-            vaultInitialEth,
-            vaultInitialUsdc,
-            haloInitialEthPosition,
-            haloInitialUsdcPosition
-        );
-    }
+    //     // Verify results
+    //     _verifyTradeResults(
+    //         sellAmount,
+    //         expectedUsdcAmount,
+    //         aliceInitialEth,
+    //         aliceInitialUsdc,
+    //         vaultInitialEth,
+    //         vaultInitialUsdc,
+    //         haloInitialEthPosition,
+    //         haloInitialUsdcPosition
+    //     );
+    // }
 
-    function test_tradeAutoSign_revertScenarios() public {
-        // initialize bobKey
-        uint256 bobKey = 0xB0B;
-        vm.label(vm.addr(bobKey), "bob");
+    // function test_tradeAutoSign_revertScenarios() public {
+    //     // initialize bobKey
+    //     uint256 bobKey = 0xB0B;
+    //     vm.label(vm.addr(bobKey), "bob");
 
-        setupPMM();
-        deal(address(weth), alice, 10 ether);
+    //     setupPMM();
+    //     deal(address(weth), alice, 10 ether);
 
-        // Calculate amounts
-        uint256 ethPriceInUsdc = 3000 * 10 ** 6;
-        uint256 sellAmount = _calculateSellAmount();
-        uint256 expectedUsdcAmount = sellAmount * ethPriceInUsdc / 1 ether;
+    //     // Calculate amounts
+    //     uint256 ethPriceInUsdc = 3000 * 10 ** 6;
+    //     uint256 sellAmount = _calculateSellAmount();
+    //     uint256 expectedUsdcAmount = sellAmount * ethPriceInUsdc / 1 ether;
 
-        // Create base quote
-        IQuote.AutoSignQuote memory quote =
-            _createAutoSignQuote(haloKey, bobKey, address(rfqPool), sellAmount, expectedUsdcAmount);
+    //     // Create base quote
+    //     IQuote.AutoSignQuote memory quote =
+    //         _createAutoSignQuote(haloKey, bobKey, address(rfqPool), sellAmount, expectedUsdcAmount);
 
-        vm.startPrank(alice);
-        weth.approve(address(router), sellAmount);
+    //     vm.startPrank(alice);
+    //     weth.approve(address(router), sellAmount);
 
-        // Test 1: Invalid deployer signature
-        vm.expectRevert(ErrorsLib.InvalidSigner.selector);
-        router.tradeAutoSign(quote);
+    //     // Test 1: Invalid deployer signature
+    //     vm.expectRevert(ErrorsLib.InvalidSigner.selector);
+    //     router.tradeAutoSign(quote);
 
-        // Test 2: Invalid market maker signature
-        {
-            bytes32 orderBookDigest = keccak256("helloworld");
-            (uint8 v, bytes32 r, bytes32 s) = vm.sign(bobKey, orderBookDigest);
-            bytes memory orderBookSig = abi.encodePacked(r, s, v);
+    //     // Test 2: Invalid market maker signature
+    //     {
+    //         bytes32 orderBookDigest = keccak256("helloworld");
+    //         (uint8 v, bytes32 r, bytes32 s) = vm.sign(bobKey, orderBookDigest);
+    //         bytes memory orderBookSig = abi.encodePacked(r, s, v);
 
-            quote.orderBookSig = orderBookSig;
-            quote.orderBookDigest = orderBookDigest;
-        }
+    //         quote.orderBookSig = orderBookSig;
+    //         quote.orderBookDigest = orderBookDigest;
+    //     }
 
-        vm.expectRevert(ErrorsLib.InvalidSigner.selector);
-        router.tradeAutoSign(quote);
+    //     vm.expectRevert(ErrorsLib.InvalidSigner.selector);
+    //     router.tradeAutoSign(quote);
 
-        // Test 3: Expired deadline
-        vm.warp(block.timestamp + 2 hours);
+    //     // Test 3: Expired deadline
+    //     vm.warp(block.timestamp + 2 hours);
 
-        vm.expectRevert(ErrorsLib.RFQQuoteExpired.selector);
-        router.tradeAutoSign(quote);
+    //     vm.expectRevert(ErrorsLib.RFQQuoteExpired.selector);
+    //     router.tradeAutoSign(quote);
 
-        vm.stopPrank();
-    }
+    //     vm.stopPrank();
+    // }
 
     /// @notice Calculates a random sell amount for testing trades
     /// @dev The amount is capped at 50% of vault balance to avoid liquidity issues
@@ -230,64 +230,64 @@ contract NativeRouterTest is BaseTest {
         return quote;
     }
 
-    function _createAutoSignQuote(
-        uint256 marketMakerKey,
-        uint256 deployerKey,
-        address poolAddress,
-        uint256 sellAmount,
-        uint256 expectedUsdcAmount
-    ) internal view returns (IQuote.AutoSignQuote memory) {
-        // Create orderbook digest and signature using market maker private key
-        bytes32 orderBookDigest = keccak256("helloworld");
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(marketMakerKey, orderBookDigest);
-        bytes memory orderBookSig = abi.encodePacked(r, s, v);
+    // function _createAutoSignQuote(
+    //     uint256 marketMakerKey,
+    //     uint256 deployerKey,
+    //     address poolAddress,
+    //     uint256 sellAmount,
+    //     uint256 expectedUsdcAmount
+    // ) internal view returns (IQuote.AutoSignQuote memory) {
+    //     // Create orderbook digest and signature using market maker private key
+    //     bytes32 orderBookDigest = keccak256("helloworld");
+    //     (uint8 v, bytes32 r, bytes32 s) = vm.sign(marketMakerKey, orderBookDigest);
+    //     bytes memory orderBookSig = abi.encodePacked(r, s, v);
 
-        IQuote.AutoSignQuote memory quote = IQuote.AutoSignQuote({
-            nonce: 0,
-            pool: poolAddress,
-            signer: halo,
-            recipient: alice,
-            buyerToken: address(USDC),
-            sellerToken: address(weth),
-            buyerTokenAmount: expectedUsdcAmount,
-            sellerTokenAmount: sellAmount,
-            effectiveSellerTokenAmount: sellAmount,
-            deadline: block.timestamp + 1 hours,
-            signature: bytes(""),
-            multiHop: false,
-            widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: 0}),
-            orderBookSig: orderBookSig,
-            orderBookDigest: orderBookDigest
-        });
+    //     IQuote.AutoSignQuote memory quote = IQuote.AutoSignQuote({
+    //         nonce: 0,
+    //         pool: poolAddress,
+    //         signer: halo,
+    //         recipient: alice,
+    //         buyerToken: address(USDC),
+    //         sellerToken: address(weth),
+    //         buyerTokenAmount: expectedUsdcAmount,
+    //         sellerTokenAmount: sellAmount,
+    //         effectiveSellerTokenAmount: sellAmount,
+    //         deadline: block.timestamp + 1 hours,
+    //         signature: bytes(""),
+    //         multiHop: false,
+    //         widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: 0}),
+    //         orderBookSig: orderBookSig,
+    //         orderBookDigest: orderBookDigest
+    //     });
 
-        bytes32 AUTO_SIGN_SIGNATURE_HASH = keccak256(
-            "AUTOSIGN(uint256 nonce,address recipient,address sellerToken,address buyerToken,uint256 sellerTokenAmount,uint256 buyerTokenAmount,uint256 deadline)"
-        );
+    //     bytes32 AUTO_SIGN_SIGNATURE_HASH = keccak256(
+    //         "AUTOSIGN(uint256 nonce,address recipient,address sellerToken,address buyerToken,uint256 sellerTokenAmount,uint256 buyerTokenAmount,uint256 deadline)"
+    //     );
 
-        // Generate auto-sign signature using deployer's key
-        bytes32 autoSignDigest = _hashTypedDataV4(
-            keccak256(
-                abi.encode(
-                    AUTO_SIGN_SIGNATURE_HASH,
-                    quote.nonce,
-                    quote.recipient,
-                    quote.sellerToken,
-                    quote.buyerToken,
-                    quote.sellerTokenAmount,
-                    quote.buyerTokenAmount,
-                    quote.deadline
-                )
-            ),
-            address(router),
-            "Native Router",
-            "1"
-        );
+    //     // Generate auto-sign signature using deployer's key
+    //     bytes32 autoSignDigest = _hashTypedDataV4(
+    //         keccak256(
+    //             abi.encode(
+    //                 AUTO_SIGN_SIGNATURE_HASH,
+    //                 quote.nonce,
+    //                 quote.recipient,
+    //                 quote.sellerToken,
+    //                 quote.buyerToken,
+    //                 quote.sellerTokenAmount,
+    //                 quote.buyerTokenAmount,
+    //                 quote.deadline
+    //             )
+    //         ),
+    //         address(router),
+    //         "Native Router",
+    //         "1"
+    //     );
 
-        (v, r, s) = vm.sign(deployerKey, autoSignDigest);
-        quote.signature = abi.encodePacked(r, s, v);
+    //     (v, r, s) = vm.sign(deployerKey, autoSignDigest);
+    //     quote.signature = abi.encodePacked(r, s, v);
 
-        return quote;
-    }
+    //     return quote;
+    // }
 
     function _verifyTradeResults(
         uint256 sellAmount,

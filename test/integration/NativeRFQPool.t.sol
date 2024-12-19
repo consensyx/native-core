@@ -8,6 +8,8 @@ import {IQuote} from "../../src/interfaces/IQuote.sol";
 import {SignatureUtils} from "../helpers/SignatureUtils.sol";
 import {ICreditVault} from "../../src/interfaces/ICreditVault.sol";
 
+import {console2} from "forge-std/console2.sol";
+
 contract NativeRFQPoolTest is BaseTest {
     NativeRouter public router2;
     NativeRFQPool public rfqPool2;

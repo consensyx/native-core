@@ -92,9 +92,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         address buyerToken,
         int256 amountOut
     ) external {
-        if (!isNativePools[msg.sender]) {
-            revert ErrorsLib.OnlyNativePool();
-        }
+        require(isNativePools[msg.sender], ErrorsLib.OnlyNativePool());
 
         // Increase seller token position
         positions[trader][sellerToken] += amountIn;
@@ -115,9 +113,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     ///      4. Updates trader positions by deducting fees
     /// @param accruedFees Array of funding fee updates for different traders
     function epochUpdate(AccruedFundingFee[] calldata accruedFees) external {
-        if (msg.sender != epochUpdater) {
-            revert ErrorsLib.OnlyEpochUpdater();
-        }
+        require(msg.sender == epochUpdater, ErrorsLib.OnlyEpochUpdater());
 
         for (uint256 i = 0; i < accruedFees.length; ++i) {
             address trader = accruedFees[i].trader;
@@ -244,12 +240,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @param recipient The address that will receive the fees
     /// @param amount The amount of fees to withdraw
     function withdrawFundingFees(address underlying, address recipient, uint256 amount) external {
-        if (msg.sender != feeWithdrawer) {
-            revert ErrorsLib.OnlyFeeWithdrawer();
-        }
-        if (amount > fundingFees) {
-            revert ErrorsLib.InsufficientFundingFees();
-        }
+        require(msg.sender == feeWithdrawer, ErrorsLib.OnlyFeeWithdrawer());
+        require(amount <= fundingFees, ErrorsLib.InsufficientFundingFees());
 
         fundingFees -= amount;
 
@@ -262,9 +254,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @param to Recipient of the underlying assets
     /// @param amount Amount of underlying assets to transfer
     function transferOut(address to, uint256 amount) external {
-        if (!(supportedMarkets[msg.sender])) {
-            revert ErrorsLib.OnlyLpToken();
-        }
+        require(supportedMarkets[msg.sender], ErrorsLib.OnlyLpToken());
+
         // Each LP token can only transfer its own underlying token
         IERC20(LPToken(msg.sender).underlying()).safeTransfer(to, amount);
     }
@@ -281,9 +272,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     function addCollateral(TokenAmountUint[] calldata tokens, address trader) external {
         for (uint256 i; i < tokens.length; ++i) {
             address token = tokens[i].token;
-            if (!supportedMarkets[token]) {
-                revert ErrorsLib.OnlyLpToken();
-            }
+            require(supportedMarkets[token], ErrorsLib.OnlyLpToken());
 
             uint256 amount = tokens[i].amount;
             creditCollateral[trader][token] += amount;
@@ -320,19 +309,18 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @param lpToken Address of the LP token to be listed
     function supportMarket(LPToken lpToken) external onlyOwner {
         // Check if market is already listed
-        if (supportedMarkets[address(lpToken)]) {
-            revert ErrorsLib.TokenAlreadyListed();
-        }
+        require(!supportedMarkets[address(lpToken)], ErrorsLib.TokenAlreadyListed());
 
         address underlying = address(lpToken.underlying());
 
         // Verify market configuration
-        if (address(lpTokens[underlying]) != address(0) || lpToken.creditVault() != address(this)) {
-            revert ErrorsLib.InvalidMarket();
-        }
+        require(
+            address(lpTokens[underlying]) == address(0) && lpToken.creditVault() == address(this),
+            ErrorsLib.InvalidMarket()
+        );
 
         // Sanity check to make sure its really LPToken
-        if (address(lpToken.underlying()) == address(0)) revert ErrorsLib.InvalidLPToken();
+        require(address(lpToken.underlying()) != address(0), ErrorsLib.InvalidLPToken());
 
         // Update storage
         lpTokens[underlying] = lpToken;
@@ -346,7 +334,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @dev Only callable by owner
     /// @param isActive to whitelist, false to remove from whitelist
     function setNativePool(address pool, bool isActive) external onlyOwner {
-        if (pool == address(0)) revert ErrorsLib.ZeroAddress();
+        require(pool != address(0), ErrorsLib.ZeroAddress());
 
         isNativePools[pool] = isActive;
         poolArray.push(pool);
@@ -360,12 +348,11 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @param tokens Array of {token, amount} structs to approve
     /// @param pool Address of native pool to receive approval
     function setAllowance(TokenAmountUint[] calldata tokens, address pool) external onlyOwner {
-        if (!isNativePools[pool]) {
-            revert ErrorsLib.OnlyNativePool();
-        }
+        require(isNativePools[pool], ErrorsLib.OnlyNativePool());
 
         for (uint256 i; i < tokens.length; ++i) {
-            if (tokens[i].token == address(0)) revert ErrorsLib.ZeroAddress();
+            require(tokens[i].token != address(0), ErrorsLib.ZeroAddress());
+
             IERC20(tokens[i].token).safeApprove(pool, tokens[i].amount);
         }
     }
@@ -376,7 +363,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @param settler Address authorized to settle positions on trader's behalf
     /// @param isTrader True to enable trading, false to revoke permissions
     function setTrader(address trader, address settler, bool isTrader) external onlyOwner {
-        if (trader == address(0) || settler == address(0)) revert ErrorsLib.ZeroAddress();
+        require(trader != address(0) && settler != address(0), ErrorsLib.ZeroAddress());
 
         isTraders[trader] = isTrader;
         settlers[trader] = settler;
@@ -387,7 +374,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @param liquidator The address to grant/revoke liquidator permissions
     /// @param status True to whitelist, false to remove from whitelist
     function setLiquidator(address liquidator, bool status) external onlyOwner {
-        if (liquidator == address(0)) revert ErrorsLib.ZeroAddress();
+        require(liquidator != address(0), ErrorsLib.ZeroAddress());
+
         isLiquidators[liquidator] = status;
     }
 
@@ -396,7 +384,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @dev Signer verifies signatures for settlements, liquidations, and collateral removals
     /// @param _signer New signer address (cannot be zero address)
     function setSigner(address _signer) external onlyOwner {
-        if (_signer == address(0)) revert ErrorsLib.ZeroAddress();
+        require(_signer != address(0), ErrorsLib.ZeroAddress());
+
         signer = _signer;
     }
 
@@ -405,7 +394,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @dev Epoch updater is responsible for funding fee updates and distributions
     /// @param _epochUpdater New epoch updater address (cannot be zero address)
     function setEpochUpdater(address _epochUpdater) external onlyOwner {
-        if (_epochUpdater == address(0)) revert ErrorsLib.ZeroAddress();
+        require(_epochUpdater != address(0), ErrorsLib.ZeroAddress());
+
         epochUpdater = _epochUpdater;
     }
 
@@ -414,7 +404,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @dev Fee withdrawer can claim accumulated funding fees from the vault
     /// @param _feeWithdrawer New fee withdrawer address (cannot be zero address)
     function setFeeWithdrawer(address payable _feeWithdrawer) external onlyOwner {
-        if (_feeWithdrawer == address(0)) revert ErrorsLib.ZeroAddress();
+        require(_feeWithdrawer != address(0), ErrorsLib.ZeroAddress());
+
         feeWithdrawer = _feeWithdrawer;
     }
 
@@ -423,9 +414,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     //////////////////////////////////////////////////////////////////////////*/
 
     function _updateNonce(uint256 nonce) internal {
-        if (nonces[nonce]) {
-            revert ErrorsLib.NonceUsed();
-        }
+        require(!nonces[nonce], ErrorsLib.NonceUsed());
+
         nonces[nonce] = true;
     }
 
@@ -448,9 +438,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         ICreditVault.SettlementRequest calldata request,
         bytes calldata signature
     ) internal {
-        if (request.deadline < block.timestamp) {
-            revert ErrorsLib.RequestExpired();
-        }
+        require(request.deadline >= block.timestamp, ErrorsLib.RequestExpired());
 
         _updateNonce(request.nonce);
 
@@ -467,18 +455,14 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         bytes32 digest = _hashTypedDataV4(msgHash);
         address recoveredSigner = ECDSA.recover(digest, signature);
 
-        if (recoveredSigner != signer) {
-            revert ErrorsLib.InvalidSignature();
-        }
+        require(recoveredSigner == signer, ErrorsLib.InvalidSignature());
     }
 
     function _verifyRemoveCollateralSignature(
         ICreditVault.RemoveCollateralRequest calldata request,
         bytes calldata signature
     ) internal {
-        if (request.deadline < block.timestamp) {
-            revert ErrorsLib.RequestExpired();
-        }
+        require(request.deadline >= block.timestamp, ErrorsLib.RequestExpired());
 
         _updateNonce(request.nonce);
 
@@ -495,18 +479,14 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         bytes32 digest = _hashTypedDataV4(msgHash);
         address recoveredSigner = ECDSA.recover(digest, signature);
 
-        if (recoveredSigner != signer) {
-            revert ErrorsLib.InvalidSignature();
-        }
+        require(recoveredSigner == signer, ErrorsLib.InvalidSignature());
     }
 
     function _verifyLiquidationSignature(
         ICreditVault.LiquidationRequest calldata request,
         bytes calldata signature
     ) internal {
-        if (request.deadline < block.timestamp) {
-            revert ErrorsLib.RequestExpired();
-        }
+        require(request.deadline >= block.timestamp, ErrorsLib.RequestExpired());
 
         _updateNonce(request.nonce);
 
@@ -524,9 +504,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         bytes32 digest = _hashTypedDataV4(msgHash);
         address recoveredSigner = ECDSA.recover(digest, signature);
 
-        if (recoveredSigner != signer) {
-            revert ErrorsLib.InvalidSignature();
-        }
+        require(recoveredSigner == signer, ErrorsLib.InvalidSignature());
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -535,16 +513,12 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
 
     /// @notice Separate the address of trader signer and settlement wallet as the frequency of the 2 operations is very different and trader could have different security setup for 2 addresses
     modifier onlyTraderOrSettler(address trader) {
-        if (!isTraders[msg.sender] && !(isTraders[trader] && msg.sender == settlers[trader])) {
-            revert ErrorsLib.OnlyTrader();
-        }
+        require(isTraders[msg.sender] || (isTraders[trader] && msg.sender == settlers[trader]), ErrorsLib.OnlyTrader());
         _;
     }
 
     modifier onlyLiquidator() {
-        if (!isLiquidators[msg.sender]) {
-            revert ErrorsLib.OnlyLiquidator();
-        }
+        require(isLiquidators[msg.sender], ErrorsLib.OnlyLiquidator());
         _;
     }
 }

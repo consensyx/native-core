@@ -45,9 +45,7 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     //////////////////////////////////////////////////////////////////////////*/
 
     receive() external payable {
-        if (msg.sender != WETH9) {
-            revert ErrorsLib.OnlyWETH9();
-        }
+        require(msg.sender == WETH9, ErrorsLib.OnlyWETH9());
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -60,9 +58,10 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         address _treasury,
         string memory _name
     ) EIP712("Native RFQ Pool", "1") {
-        if (_WETH9 == address(0) || _router == address(0) || _treasury == address(0) || bytes(_name).length == 0) {
-            revert ErrorsLib.ZeroInput();
-        }
+        require(
+            _WETH9 != address(0) && _router != address(0) && _treasury != address(0) && bytes(_name).length > 0,
+            ErrorsLib.ZeroInput()
+        );
 
         name = _name;
         router = _router;
@@ -77,17 +76,18 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     /// @notice See NativeRouter.tradeRFQT for detailed documentation
     /// @dev Called by NativeRouter to execute RFQ trades in the pool
     function tradeRFQT(RFQTQuote memory quote) external override onlyRouter {
-        // quote.buyerToken will never be address(0)
-        quote.sellerToken = quote.sellerToken == address(0) ? WETH9 : quote.sellerToken;
+        // Prevent replay attacks
+        require(!nonces[quote.nonce], ErrorsLib.NonceUsed());
 
-        if (!_verifyRFQSignature(quote)) {
-            revert ErrorsLib.InvalidSignature();
-        }
+        // Verify market maker signature
+        _verifyPMMSignature(quote);
 
-        if (nonces[quote.nonce]) {
-            revert ErrorsLib.NonceUsed();
-        }
+        // Mark nonce as used
         nonces[quote.nonce] = true;
+
+        // Handle ETH case: convert null address to WETH9 for seller token
+        // buyerToken is validated in router and cannot be address(0)
+        quote.sellerToken = quote.sellerToken == address(0) ? WETH9 : quote.sellerToken;
 
         uint256 buyerTokenAmount = _transferAndCallback(
             quote.signer,
@@ -110,28 +110,26 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         );
     }
 
-    /// @notice See {NativeRouter-tradeAutoSign} for detailed documentation
+    /// @notice See {NativeRouter-fillOrder} for detailed documentation
     /// @dev Called by NativeRouter to execute auto-sign trades in the pool
-    function tradeAutoSign(AutoSignQuote memory quote) external override onlyRouter {
-        quote.sellerToken = quote.sellerToken == address(0) ? WETH9 : quote.sellerToken;
-
-        uint256 buyerTokenAmount = _transferAndCallback(
-            quote.signer,
+    function fillOrder(PermitQuote memory quote) external override onlyRouter {
+        uint256 tokenOutAmount = _transferAndCallback(
+            quote.marketMaker,
             quote.recipient,
-            quote.buyerToken,
-            quote.sellerToken,
-            quote.buyerTokenAmount,
-            quote.sellerTokenAmount,
-            quote.effectiveSellerTokenAmount
+            quote.tokenOut,
+            quote.tokenIn,
+            quote.amountOut,
+            quote.amountIn,
+            quote.effectiveAmountIn
         );
 
-        emit AutoSignTrade(
+        emit OrderFilled(
             quote.recipient,
-            quote.sellerToken,
-            quote.buyerToken,
-            quote.effectiveSellerTokenAmount,
-            buyerTokenAmount,
-            quote.signer,
+            quote.tokenIn,
+            quote.tokenOut,
+            quote.effectiveAmountIn,
+            tokenOutAmount,
+            quote.marketMaker,
             quote.orderBookSig,
             quote.orderBookDigest
         );
@@ -184,10 +182,11 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             : buyerTokenAmount;
 
         if (isEnableCallback) {
-            if (effectiveSellerTokenAmount > uint256(type(int256).max) || _buyerTokenAmount > uint256(type(int256).max))
-            {
-                revert ErrorsLib.Overflow();
-            }
+            require(
+                effectiveSellerTokenAmount <= uint256(type(int256).max)
+                    && _buyerTokenAmount <= uint256(type(int256).max),
+                ErrorsLib.Overflow()
+            );
 
             ICreditVault(treasury).swapCallback(
                 signer, sellerToken, int256(effectiveSellerTokenAmount), buyerToken, int256(_buyerTokenAmount)
@@ -212,10 +211,8 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         }
     }
 
-    function _verifyRFQSignature(RFQTQuote memory quote) internal view returns (bool) {
-        if (!isSigner[quote.signer]) {
-            revert ErrorsLib.InvalidSigner();
-        }
+    function _verifyPMMSignature(RFQTQuote memory quote) internal view {
+        require(isSigner[quote.signer], ErrorsLib.InvalidSigner());
 
         bytes32 digest = _hashTypedDataV4(
             keccak256(
@@ -236,14 +233,11 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             )
         );
 
-        address recoveredSigner = ECDSA.recover(digest, quote.signature);
-        return quote.signer == recoveredSigner;
+        require(quote.signer == ECDSA.recover(digest, quote.signature), ErrorsLib.InvalidSignature());
     }
 
     modifier onlyRouter() {
-        if (msg.sender != router) {
-            revert ErrorsLib.OnlyNativeRouter();
-        }
+        require(msg.sender == router, ErrorsLib.OnlyNativeRouter());
         _;
     }
 }

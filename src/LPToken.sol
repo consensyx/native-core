@@ -7,6 +7,7 @@ import {Pausable} from "@openzeppelin/contracts/security/Pausable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
+import "./libraries/ConstantsLib.sol";
 import {CreditVault} from "./CreditVault.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {ReentrancyGuardTransient} from "./libraries/ReentrancyGuardTransient.sol";
@@ -97,7 +98,7 @@ contract LPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     /// @param amount Amount of underlying tokens to deposit
     /// @return sharesToMint Amount of LP tokens minted
     function deposit(uint256 amount) external nonReentrant whenNotPaused returns (uint256 sharesToMint) {
-        if (amount < minDeposit || amount == 0) revert ErrorsLib.BelowMinimumDeposit();
+        require(amount >= minDeposit && amount > 0, ErrorsLib.BelowMinimumDeposit());
 
         // Transfer underlying to vault
         uint256 balanceBefore = underlying.balanceOf(creditVault);
@@ -126,8 +127,8 @@ contract LPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     /// @param sharesToBurn Amount of LP tokens to burn
     /// @return underlyingAmount Amount of underlying tokens received
     function redeem(uint256 sharesToBurn) external nonReentrant whenNotPaused returns (uint256 underlyingAmount) {
-        if (sharesToBurn == 0) revert ErrorsLib.ZeroAmount();
-        if (shares[msg.sender] < sharesToBurn) revert ErrorsLib.InsufficientShares();
+        require(sharesToBurn > 0, ErrorsLib.ZeroAmount());
+        require(shares[msg.sender] >= sharesToBurn, ErrorsLib.InsufficientShares());
 
         // Calculate underlying amount
         underlyingAmount = (sharesToBurn * totalUnderlying) / totalShares;
@@ -154,9 +155,9 @@ contract LPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     /// @param yieldAmount Amount of yield to distribute
     /// @dev Can only be called by the credit vault
     function distributeYield(uint256 yieldAmount) external {
-        if (totalShares == 0) revert ErrorsLib.PoolNotInitialized();
-        if (yieldAmount == 0) revert ErrorsLib.NoYieldToDistribute();
-        if (msg.sender != creditVault) revert ErrorsLib.OnlyCreditVault();
+        require(totalShares > 0, ErrorsLib.PoolNotInitialized());
+        require(yieldAmount > 0, ErrorsLib.NoYieldToDistribute());
+        require(msg.sender == creditVault, ErrorsLib.OnlyCreditVault());
 
         totalUnderlying += yieldAmount;
 
@@ -252,7 +253,7 @@ contract LPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     /// @param _earlyWithdrawFeeBips New early withdrawal fee in BIPs
     /// @dev Can only be called by the owner
     function setEarlyWithdrawFeeBips(uint256 _earlyWithdrawFeeBips) external onlyOwner {
-        if (_earlyWithdrawFeeBips > 10_000) revert ErrorsLib.InvalidFeeBips();
+        require(_earlyWithdrawFeeBips <= MAX_EARLY_WITHDRAW_FEE_BIPS, ErrorsLib.InvalidFeeBips());
 
         uint256 oldFeeBips = earlyWithdrawFeeBips;
         earlyWithdrawFeeBips = _earlyWithdrawFeeBips;
@@ -265,23 +266,23 @@ contract LPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     //////////////////////////////////////////////////////////////////////////*/
 
     function _mintShares(address to, uint256 shareAmount) internal {
-        if (to == address(0)) revert ErrorsLib.ZeroAddress();
+        require(to != address(0), ErrorsLib.ZeroAddress());
 
         shares[to] += shareAmount;
         totalShares += shareAmount;
     }
 
     function _burnShares(address from, uint256 shareAmount) internal {
-        if (from == address(0)) revert ErrorsLib.ZeroAddress();
+        require(from != address(0), ErrorsLib.ZeroAddress());
 
         shares[from] -= shareAmount;
         totalShares -= shareAmount;
     }
 
     function _transferShares(address from, address to, uint256 _shares) internal {
-        if (from == address(0) || to == address(0)) revert ErrorsLib.ZeroAddress();
-        if (to == address(this)) revert ErrorsLib.TransferSelf();
-        if (_shares > shares[from]) revert ErrorsLib.InsufficientShares();
+        require(from != address(0) && to != address(0), ErrorsLib.ZeroAddress());
+        require(to != address(this), ErrorsLib.TransferSelf());
+        require(_shares <= shares[from], ErrorsLib.InsufficientShares());
 
         shares[from] -= _shares;
         shares[to] += _shares;

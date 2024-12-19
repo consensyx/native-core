@@ -2,17 +2,40 @@
 pragma solidity 0.8.28;
 
 import {IQuote} from "./IQuote.sol";
+import {ISignatureTransfer} from "@permit2/interfaces/ISignatureTransfer.sol";
 
+/// @title Native Router Interface
 interface INativeRouter is IQuote {
+    /// @notice Execute an RFQ trade with a signed quote
+    /// @param quote The RFQ quote containing trade details
     function tradeRFQT(RFQTQuote memory quote) external payable;
 
-    function tradeAutoSign(AutoSignQuote memory quote) external payable;
+    /// @notice Execute a trade using permit2 signature for token transfer
+    /// @param quote The quote containing trade parameters
+    /// @param swapperPermit The permit2 transfer authorization
+    /// @param swapperSig The signature authorizing the transfer
+    function fillOrder(
+        PermitQuote memory quote,
+        ISignatureTransfer.PermitTransferFrom calldata swapperPermit,
+        bytes calldata swapperSig
+    ) external;
 
+    /// @notice Withdraw accumulated widget fees for multiple tokens
+    /// @param tokens Array of token addresses to withdraw fees from
+    /// @param recipient Address to receive the withdrawn fees
+    function withdrawWidgetFees(address[] calldata tokens, address recipient) external;
+
+    /// @notice Emitted when ETH is refunded
     event RefundETH(address recipient, uint256 amount);
 
+    /// @notice Emitted when widget fee signer is updated
     event SetSigner(address widgetFeeSigner);
 
+    /// @notice Emitted when RFQ trade widget fee is transferred
     event WidgetFeeTransfer(
         address widgetFeeRecipient, uint256 widgetFeeRate, uint256 widgetFeeAmount, address widgetFeeToken
     );
+
+    /// @notice Emitted when permit widget fees are withdrawn
+    event WidgetFeesWithdrawn(address indexed recipient, address token, uint256 amount);
 }

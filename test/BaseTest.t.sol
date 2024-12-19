@@ -65,15 +65,21 @@ contract BaseTest is Test {
     // Add deployer private key
     uint256 internal deployerKey;
 
+    // Test user private keys
+    uint256 internal aliceKey = 0x1111;
+    uint256 internal bobKey = 0x2222;
+    uint256 internal charlieKey = 0x3333;
+    uint256 internal daveKey = 0x4444;
+
     function setUp() public virtual {
         // Generate deployer key and address
         deployerKey = 0xF66CE;
         deployer = vm.addr(deployerKey);
 
-        alice = makeAddr("alice");
-        bob = makeAddr("bob");
-        charlie = makeAddr("charlie");
-        dave = makeAddr("dave");
+        alice = vm.addr(aliceKey);
+        bob = vm.addr(bobKey);
+        charlie = vm.addr(charlieKey);
+        dave = vm.addr(daveKey);
 
         // Switch to deployer account and ensure it remains active until all deployments and setups are complete
         vm.startPrank(deployer);

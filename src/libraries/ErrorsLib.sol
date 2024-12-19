@@ -74,9 +74,6 @@ library ErrorsLib {
     /// @notice Thrown when widget fee rate is invalid
     error InvalidWidgetFeeRate();
 
-    /// @notice Thrown when widget fee signature is invalid
-    error InvalidWidgetFeeSignature();
-
     /// @notice Thrown when nonce is used
     error NonceUsed();
 
@@ -87,7 +84,7 @@ library ErrorsLib {
     error NotEnoughAmountOut(uint256 amountOut, uint256 amountOutMinimum);
 
     /// @notice Thrown when insufficient token output received
-    error NotEnoughTokenOutReceived();
+    error NotEnoughTokenReceived();
 
     /// @notice Thrown when caller is not the credit vault
     error OnlyCreditVault();
@@ -125,11 +122,14 @@ library ErrorsLib {
     /// @notice Thrown when arithmetic operation would overflow
     error Overflow();
 
+    /// @notice Thrown when permit2 token mismatch quote
+    error Permit2TokenMismatch();
+
     /// @notice Thrown when LP pool has no deposits yet
     error PoolNotInitialized();
 
-    /// @notice Thrown when RFQ quote has expired
-    error RFQQuoteExpired();
+    /// @notice Thrown when quote has expired
+    error QuoteExpired();
 
     /// @notice Thrown when request has expired
     error RequestExpired();

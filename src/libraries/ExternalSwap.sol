@@ -33,13 +33,8 @@ library ExternalSwap {
         address payer,
         bytes memory fallbackCalldata
     ) internal returns (uint256 amountOut) {
-        if (order.deadlineTimestamp <= block.timestamp) {
-            revert ErrorsLib.OrderExpired();
-        }
-
-        if (flexibleAmount == 0) {
-            revert ErrorsLib.ZeroAmount();
-        }
+        require(flexibleAmount > 0, ErrorsLib.ZeroAmount());
+        require(order.deadlineTimestamp >= block.timestamp, ErrorsLib.OrderExpired());
 
         SwapState memory state;
         (state.buyerTokenAmount, state.sellerTokenAmount) = _calculateTokenAmount(flexibleAmount, order);
@@ -56,9 +51,8 @@ library ExternalSwap {
         {
             // call to external contract
             (bool success,) = order.buyer.call(fallbackCalldata);
-            if (!success) {
-                revert ErrorsLib.ExternalCallFailed(order.buyer, bytes4(fallbackCalldata));
-            }
+
+            require(success, ErrorsLib.ExternalCallFailed(order.buyer, bytes4(fallbackCalldata)));
         }
 
         {
@@ -76,9 +70,7 @@ library ExternalSwap {
             }
 
             // amountOut is always the difference in after - before of recipient balance, to account for fee on transfer tokens
-            if (amountOut < state.buyerTokenAmount) {
-                revert ErrorsLib.NotEnoughTokenOutReceived();
-            }
+            require(amountOut >= state.buyerTokenAmount, ErrorsLib.NotEnoughTokenReceived());
         }
 
         emit ExternalSwapExecuted(
@@ -99,18 +91,15 @@ library ExternalSwap {
         uint256 buyerTokenAmount = _order.buyerTokenAmount;
         uint256 sellerTokenAmount = _order.sellerTokenAmount;
 
-        if (sellerTokenAmount == 0 || buyerTokenAmount == 0 || flexibleAmount == 0) {
-            revert ErrorsLib.ZeroAmount();
-        }
+        require(sellerTokenAmount > 0 && buyerTokenAmount > 0 && flexibleAmount > 0, ErrorsLib.ZeroAmount());
 
         if (flexibleAmount < sellerTokenAmount) {
             buyerTokenAmount = FullMath.mulDiv(flexibleAmount, buyerTokenAmount, sellerTokenAmount);
             sellerTokenAmount = flexibleAmount;
         }
 
-        if (buyerTokenAmount == 0) {
-            revert ErrorsLib.ZeroAmount();
-        }
+        require(buyerTokenAmount > 0, ErrorsLib.ZeroAmount());
+
         return (buyerTokenAmount, sellerTokenAmount);
     }
 }
