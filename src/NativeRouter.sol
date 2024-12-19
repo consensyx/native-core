@@ -30,13 +30,14 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @dev Address of the Wrapped Ether (WETH9) contract
     address public WETH9;
 
-    // Permit2 contract address
-    ISignatureTransfer public constant PERMIT2 = ISignatureTransfer(0x000000000022D473030F116dDEE9F6B43aC78BA3);
+    /// @dev Uniswap Permit2 contract address
+    address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+
     /// @dev Address of the CreditVault contract that manages credit and native pools
     address public vault;
 
-    /// @dev Address of signer authorized to sign RFQ trade and auto-sign trade messages
-    address public signer;
+    /// @dev Address of signer authorized to sign tradeRFQT and fillOrder signatures
+    mapping(address => bool) public signers;
 
     /// @notice Mapping to track used nonces for preventing replay attacks
     mapping(uint256 => bool) public nonces;
@@ -44,7 +45,8 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @dev Mapping to track which external routers are whitelisted for swaps
     mapping(address => bool) public whitelistRouter;
 
-    /// @dev token -> total widget fee
+    /// @dev Accumulated widget fees per token address
+    /// @notice The widgetFee is charged via the fillOrder, not include the widgetFee for tradeRFQ.
     mapping(address => uint256) public permitWidgetFee;
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -65,7 +67,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
         vault = _vault;
         WETH9 = _WETH9;
 
-        setSigner(_signer);
+        setSigner(_signer, true);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -154,7 +156,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
 
         // Note: Since router will charges widget fee, can't transfer directly to recipient
         // Execute permit2 transfer: swapper -> router
-        PERMIT2.permitTransferFrom(
+        ISignatureTransfer(PERMIT2).permitTransferFrom(
             swapperPermit,
             ISignatureTransfer.SignatureTransferDetails({to: address(this), requestedAmount: quote.amountIn}),
             quote.swapper,
@@ -235,12 +237,13 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
 
     /// @notice Set the authorized signer for widget fee and auto-sign messages
     /// @dev Can only be called by contract owner
-    /// @param _signer The new signer address to be set
-    function setSigner(address _signer) public onlyOwner {
-        require(_signer != address(0), ErrorsLib.ZeroAddress());
+    /// @param signer The new signer address to be set
+    /// @param isSigner Whether the signer is authorized to sign RFQ trade and fillOrder signatures
+    function setSigner(address signer, bool isSigner) public onlyOwner {
+        require(signer != address(0), ErrorsLib.ZeroAddress());
 
-        signer = _signer;
-        emit SetSigner(signer);
+        signers[signer] = isSigner;
+        emit SignerUpdated(signer, isSigner);
     }
 
     /// @notice Batch set whitelist status for external routers
@@ -334,7 +337,9 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
             )
         );
 
-        require(signer == ECDSA.recover(digest, quote.widgetFeeSignature), ErrorsLib.InvalidSignature());
+        address recoveredSigner = ECDSA.recover(digest, quote.widgetFeeSignature);
+
+        require(signers[recoveredSigner], ErrorsLib.InvalidSignature());
     }
 
     function _verifyOrderSignature(PermitQuote memory quote) internal view {
@@ -356,6 +361,6 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
         address recoveredSigner = ECDSA.recover(digest, quote.signature);
         address recoveredMMSigner = ECDSA.recover(quote.orderBookDigest, quote.orderBookSig);
 
-        require(signer == recoveredSigner && quote.marketMaker == recoveredMMSigner, ErrorsLib.InvalidSignature());
+        require(signers[recoveredSigner] && quote.marketMaker == recoveredMMSigner, ErrorsLib.InvalidSignature());
     }
 }

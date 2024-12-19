@@ -149,11 +149,11 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
 
     /// @notice Adds or removes a market maker's authorization to sign quotes
     /// @param signer The market maker's address
-    /// @param status True to authorize, false to revoke
+    /// @param _isSigner True to authorize, false to revoke
     /// @dev Only callable by owner
-    function setSigner(address signer, bool status) external onlyOwner {
-        isSigner[signer] = status;
-        emit SignerUpdated(signer, status);
+    function setSigner(address signer, bool _isSigner) external onlyOwner {
+        isSigner[signer] = _isSigner;
+        emit SignerUpdated(signer, _isSigner);
     }
 
     /// @notice Enables or disables post-trade callback functionality

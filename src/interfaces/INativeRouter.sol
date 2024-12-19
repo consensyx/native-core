@@ -28,8 +28,8 @@ interface INativeRouter is IQuote {
     /// @notice Emitted when ETH is refunded
     event RefundETH(address recipient, uint256 amount);
 
-    /// @notice Emitted when widget fee signer is updated
-    event SetSigner(address widgetFeeSigner);
+    // @notice Emitted when a signer's status is updated
+    event SignerUpdated(address signer, bool isSigner);
 
     /// @notice Emitted when RFQ trade widget fee is transferred
     event WidgetFeeTransfer(

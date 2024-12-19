@@ -14,7 +14,7 @@ interface INativeRFQPool is IQuote {
     function fillOrder(PermitQuote memory quote) external;
 
     /// @notice Emitted when a signer's status is updated
-    event SignerUpdated(address signer, bool value);
+    event SignerUpdated(address signer, bool isSigner);
 
     /// @notice Emitted when treasury address is set
     event TreasurySet(address treasury);
