@@ -4,13 +4,13 @@ pragma solidity 0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 import {EIP712, ECDSA} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
 import "./libraries/ConstantsLib.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {ICreditVault} from "./interfaces/ICreditVault.sol";
-
+import {SafeERC20} from "./libraries/SafeERC20.sol";
 import {LPToken} from "./LPToken.sol";
 
 /// @title CreditVault - Manages trader positions and collateral
@@ -304,7 +304,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         );
 
         // Sanity check to make sure its really LPToken
-        require(address(lpToken.underlying()) != address(0), ErrorsLib.InvalidLPToken());
+        require(address(underlying) != address(0), ErrorsLib.InvalidLPToken());
 
         // Update storage
         lpTokens[underlying] = lpToken;

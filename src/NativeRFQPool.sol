@@ -2,7 +2,6 @@
 pragma solidity 0.8.28;
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
-import {Context} from "@openzeppelin/contracts/utils/Context.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -28,8 +27,8 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     /// @notice Address of the router contract that can execute trades
     address public router;
 
-    /// @notice Address of the WETH contract for handling ETH/WETH conversions
-    address public WETH9;
+    /// @dev Address of the Wrapped Ether (WETH9) contract
+    address public immutable WETH9;
 
     /// @notice Address of the treasury that holds and manages tokens, can be a CreditVault or market maker own account
     address public treasury;

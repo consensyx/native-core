@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.28;
+pragma solidity 0.8.28;
 
 /// @dev Every interval, the system performs an epoch update to calculate and settle funding fees between traders
 uint256 constant EPOCH_UPDATE_INTERVAL = 8 hours;

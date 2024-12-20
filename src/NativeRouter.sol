@@ -4,18 +4,18 @@ pragma solidity 0.8.28;
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ISignatureTransfer} from "@permit2/interfaces/ISignatureTransfer.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {EIP712, ECDSA} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
 import {IWETH9} from "./interfaces/IWETH9.sol";
 import {INativeRouter} from "./interfaces/INativeRouter.sol";
 
 import "./libraries/ConstantsLib.sol";
-import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {Orders} from "./libraries/Order.sol";
-import {SafeCast} from "./libraries/SafeCast.sol";
 import {Multicall} from "./libraries/Multicall.sol";
+import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {TransferHelper} from "./libraries/TransferHelper.sol";
 import {ReentrancyGuardTransient} from "./libraries/ReentrancyGuardTransient.sol";
 
@@ -28,7 +28,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     using SafeCast for uint256;
 
     /// @dev Address of the Wrapped Ether (WETH9) contract
-    address public WETH9;
+    address public immutable WETH9;
 
     /// @dev Uniswap Permit2 contract address
     address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;

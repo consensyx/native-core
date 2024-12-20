@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.28;
+pragma solidity 0.8.28;
 
 /// @title Custom error definitions for the protocol
 /// @notice This library contains all the error definitions used throughout the contract
