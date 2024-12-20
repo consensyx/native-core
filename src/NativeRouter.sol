@@ -77,8 +77,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @notice Execute a Request for Quote (RFQ) trade based on market maker's signed quote
     /// @dev This function facilitates trades between swappers and Native's partnered market makers:
     function tradeRFQT(RFQTQuote memory quote) external payable override nonReentrant {
-        // Note: 10_000 (100%) is just a theoretical maximum
-        require(quote.widgetFee.feeRate <= 10_000, ErrorsLib.InvalidWidgetFeeRate());
+        require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
         require(quote.effectiveSellerTokenAmount <= quote.sellerTokenAmount, ErrorsLib.InvalidAmount());
         require(block.timestamp <= quote.deadlineTimestamp, ErrorsLib.QuoteExpired());
 
@@ -132,7 +131,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
         bytes calldata swapperSig
     ) external nonReentrant {
         // Validate widget fee rate
-        require(quote.widgetFee.feeRate <= 10_000, ErrorsLib.InvalidWidgetFeeRate());
+        require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
         // Validate input amounts and expiration
         require(quote.effectiveAmountIn <= quote.amountIn, ErrorsLib.InvalidAmount());
         require(

@@ -7,6 +7,9 @@ uint256 constant EPOCH_UPDATE_INTERVAL = 8 hours;
 /// @dev Maximum early withdrawal fee in basis points (10%)
 uint256 constant MAX_EARLY_WITHDRAW_FEE_BIPS = 1000;
 
+/// @dev Maximum widget fee in basis points (20%)
+uint256 constant MAX_WIDGET_FEE_BIPS = 2000;
+
 /// @dev The EIP-712 typeHash for Settle Market Maker Position Authorization.
 bytes32 constant SETTLEMENT_REQUEST_SIGNATURE_HASH = keccak256(
     "SettlementRequest(uint256 nonce,uint256 deadline,address trader,bytes32 positionUpdates,address recipient)"

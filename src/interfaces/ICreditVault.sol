@@ -18,14 +18,14 @@ interface ICreditVault {
         FundingFeeAmount[] feeUpdates;
     }
 
-    /// @notice Details of funding and LP fees for a specific token
+    /// @notice Details of funding and reserve fees for a specific token
     /// @param token The unerlying token address
-    /// @param fundingFee Amount of funding fee charged
-    /// @param lpFee Amount of fee distributed to LP holders
+    /// @param fundingFee  Amount of fee distributed to LP holders
+    /// @param reserveFee Amount of fee reserved for the protocol
     struct FundingFeeAmount {
         address token;
         uint256 fundingFee;
-        uint256 lpFee;
+        uint256 reserveFee;
     }
 
     /// @notice Represents a token amount with unsigned integer value

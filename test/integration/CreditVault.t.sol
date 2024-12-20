@@ -48,7 +48,7 @@ contract CreditVaultTest is BaseTest {
         vm.stopPrank();
 
         ICreditVault.FundingFeeAmount[] memory feeUpdates = new ICreditVault.FundingFeeAmount[](1);
-        feeUpdates[0] = ICreditVault.FundingFeeAmount({token: address(USDC), fundingFee: 10, lpFee: 5});
+        feeUpdates[0] = ICreditVault.FundingFeeAmount({token: address(USDC), reserveFee: 10, fundingFee: 5});
 
         ICreditVault.AccruedFundingFee[] memory accruedFees = new ICreditVault.AccruedFundingFee[](1);
         accruedFees[0] = ICreditVault.AccruedFundingFee({trader: halo, feeUpdates: feeUpdates});
@@ -79,7 +79,7 @@ contract CreditVaultTest is BaseTest {
         vm.stopPrank();
 
         ICreditVault.FundingFeeAmount[] memory feeUpdates = new ICreditVault.FundingFeeAmount[](1);
-        feeUpdates[0] = ICreditVault.FundingFeeAmount({token: address(USDC), fundingFee: 10, lpFee: 5});
+        feeUpdates[0] = ICreditVault.FundingFeeAmount({token: address(USDC), reserveFee: 10, fundingFee: 5});
 
         ICreditVault.AccruedFundingFee[] memory accruedFees = new ICreditVault.AccruedFundingFee[](1);
         accruedFees[0] = ICreditVault.AccruedFundingFee({trader: halo, feeUpdates: feeUpdates});
@@ -111,7 +111,7 @@ contract CreditVaultTest is BaseTest {
     function test_epochUpdate_lpPoolNotInitialized() public {
         // Create fee updates
         ICreditVault.FundingFeeAmount[] memory feeUpdates = new ICreditVault.FundingFeeAmount[](1);
-        feeUpdates[0] = ICreditVault.FundingFeeAmount({token: address(USDC), fundingFee: 100, lpFee: 50});
+        feeUpdates[0] = ICreditVault.FundingFeeAmount({token: address(USDC), reserveFee: 100, fundingFee: 50});
 
         ICreditVault.AccruedFundingFee[] memory accruedFees = new ICreditVault.AccruedFundingFee[](1);
         accruedFees[0] = ICreditVault.AccruedFundingFee({trader: halo, feeUpdates: feeUpdates});
@@ -148,8 +148,8 @@ contract CreditVaultTest is BaseTest {
         ICreditVault.FundingFeeAmount[] memory feeUpdates = new ICreditVault.FundingFeeAmount[](1);
         feeUpdates[0] = ICreditVault.FundingFeeAmount({
             token: address(USDC),
-            fundingFee: 100,
-            lpFee: 1000 // This would cause >1% increase in exchange rate
+            reserveFee: 100,
+            fundingFee: 1000 // This would cause >1% increase in exchange rate
         });
 
         ICreditVault.AccruedFundingFee[] memory accruedFees = new ICreditVault.AccruedFundingFee[](1);
@@ -170,7 +170,7 @@ contract CreditVaultTest is BaseTest {
 
         // Setup fee updates
         ICreditVault.FundingFeeAmount[] memory feeUpdates = new ICreditVault.FundingFeeAmount[](1);
-        feeUpdates[0] = ICreditVault.FundingFeeAmount({token: address(USDC), fundingFee: 100, lpFee: 50});
+        feeUpdates[0] = ICreditVault.FundingFeeAmount({token: address(USDC), reserveFee: 100, fundingFee: 50});
 
         ICreditVault.AccruedFundingFee[] memory accruedFees = new ICreditVault.AccruedFundingFee[](1);
         accruedFees[0] = ICreditVault.AccruedFundingFee({trader: alice, feeUpdates: feeUpdates});
@@ -184,14 +184,14 @@ contract CreditVaultTest is BaseTest {
         creditVault.epochUpdate(accruedFees);
 
         // Verify funding rate fees were accrued
-        assertEq(creditVault.fundingFees(), 100);
+        assertEq(creditVault.reserveFees(address(USDC)), 100);
 
         // Withdraw funding rate fees
         vm.prank(deployer);
-        creditVault.withdrawFundingFees(address(USDC), deployer, 100);
+        creditVault.withdrawReserve(address(USDC), deployer, 100);
 
         // Verify final balances
-        assertEq(creditVault.fundingFees(), 0);
+        assertEq(creditVault.reserveFees(address(USDC)), 0);
         assertEq(
             USDC.balanceOf(address(creditVault)),
             vaultInitialBalance - 100,
@@ -213,7 +213,7 @@ contract CreditVaultTest is BaseTest {
         vm.stopPrank();
 
         ICreditVault.FundingFeeAmount[] memory feeUpdates = new ICreditVault.FundingFeeAmount[](1);
-        feeUpdates[0] = ICreditVault.FundingFeeAmount({token: address(USDC), fundingFee: 100, lpFee: 50});
+        feeUpdates[0] = ICreditVault.FundingFeeAmount({token: address(USDC), reserveFee: 100, fundingFee: 50});
 
         ICreditVault.AccruedFundingFee[] memory accruedFees = new ICreditVault.AccruedFundingFee[](1);
         accruedFees[0] = ICreditVault.AccruedFundingFee({trader: alice, feeUpdates: feeUpdates});
@@ -225,12 +225,12 @@ contract CreditVaultTest is BaseTest {
         address randomUser = address(0x999);
         vm.prank(randomUser);
         vm.expectRevert(ErrorsLib.OnlyFeeWithdrawer.selector);
-        creditVault.withdrawFundingFees(address(USDC), randomUser, 50);
+        creditVault.withdrawReserve(address(USDC), randomUser, 50);
 
         // Test 2: Cannot withdraw more than the accumulated fees
         vm.prank(deployer);
         vm.expectRevert(ErrorsLib.InsufficientFundingFees.selector);
-        creditVault.withdrawFundingFees(address(USDC), deployer, 150);
+        creditVault.withdrawReserve(address(USDC), deployer, 150);
 
         // Test 3: Successful withdrawal
         uint256 initialVaultBalance = USDC.balanceOf(address(creditVault));
@@ -238,10 +238,10 @@ contract CreditVaultTest is BaseTest {
         uint256 initialTotalUnderlying = lpUSDC.totalUnderlying();
 
         vm.prank(deployer);
-        creditVault.withdrawFundingFees(address(USDC), deployer, 50);
+        creditVault.withdrawReserve(address(USDC), deployer, 50);
 
         // Verify state changes
-        assertEq(creditVault.fundingFees(), 50, "Remaining funding fees should be 50");
+        assertEq(creditVault.reserveFees(address(USDC)), 50, "Remaining funding fees should be 50");
         assertEq(
             USDC.balanceOf(address(creditVault)), initialVaultBalance - 50, "Vault USDC balance should decrease by 50"
         );
@@ -1223,24 +1223,31 @@ contract CreditVaultTest is BaseTest {
         assertEq(weth.balanceOf(address(creditVault)), initialVaultWETHBalance + 1 ether, "WETH not added to vault");
     }
 
-    function test_transferOut() public {
+    function test_payLPtoken() public {
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 10_000e6);
+        lpUSDC.deposit(10_000e6);
+        vm.stopPrank();
+
+        uint256 vaultInitialBalance = USDC.balanceOf(address(creditVault));
+        uint256 aliceInitialBalance = USDC.balanceOf(alice);
+
         uint256 amount = 1000e6;
 
-        // Setup: Give USDC to creditVault
-        deal(address(USDC), address(creditVault), amount);
-
-        // Test 1: Non-supported market cannot call transferOut
+        // Test 1: Non-supported market cannot call pay
         address nonSupportedMarket = makeAddr("nonSupportedMarket");
         vm.prank(nonSupportedMarket);
         vm.expectRevert(ErrorsLib.OnlyLpToken.selector);
-        creditVault.transferOut(alice, amount);
+        creditVault.pay(alice, amount);
 
-        // Test 2: Successful transfer from supported LP token
-        uint256 aliceInitialBalance = USDC.balanceOf(alice);
-        uint256 vaultInitialBalance = USDC.balanceOf(address(creditVault));
+        // Test 2: Cannot pay more than totalUnderlying
+        vm.prank(address(lpUSDC));
+        vm.expectRevert(ErrorsLib.InsufficientUnderlying.selector);
+        creditVault.pay(alice, 1_000_000e6);
 
-        vm.prank(address(lpUSDC)); // lpUSDC is already a supported market from setup
-        creditVault.transferOut(alice, amount);
+        // Test 3: Successful transfer from supported LP token
+        vm.prank(address(lpUSDC));
+        creditVault.pay(alice, amount);
 
         // Verify balances after transfer
         assertEq(

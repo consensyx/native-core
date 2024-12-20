@@ -41,6 +41,9 @@ library ErrorsLib {
     /// @notice Thrown when token amount is insufficient for operation
     error InsufficientTokenAmount();
 
+    /// @notice Thrown when LP token underlying is insufficient
+    error InsufficientUnderlying();
+
     /// @notice Thrown when an amount parameter is invalid
     error InvalidAmount();
 

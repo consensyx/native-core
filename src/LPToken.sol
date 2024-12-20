@@ -142,7 +142,7 @@ contract LPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
 
         // Transfer underlying from vault to msg.sender
         uint256 balanceBefore = underlying.balanceOf(creditVault);
-        CreditVault(creditVault).transferOut(msg.sender, underlyingAmount);
+        CreditVault(creditVault).pay(msg.sender, underlyingAmount);
         underlyingAmount = balanceBefore - underlying.balanceOf(creditVault);
 
         // Update total underlying

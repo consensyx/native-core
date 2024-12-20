@@ -27,9 +27,6 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @notice Address that can withdraw protocol fees
     address payable public feeWithdrawer;
 
-    /// @notice Accumulated funding rate fees charged from traders
-    uint256 public fundingFees;
-
     /// @notice signer for permissioned functions: liquidate, settle, etc.
     address public signer;
 
@@ -39,8 +36,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @notice A list of all markets
     LPToken[] public allLPTokens;
 
-    /// @notice A list of all native pools
-    address[] public poolArray;
+    /// @notice Mapping of accumulated reserveFees per token (token => fee amount)
+    mapping(address => uint256) public reserveFees;
 
     /// @notice (trader => timestamp)
     mapping(address => uint256) public lastEpochUpdateTimestamp;
@@ -124,25 +121,26 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
 
             for (uint256 j = 0; j < accruedFees[i].feeUpdates.length; ++j) {
                 address token = accruedFees[i].feeUpdates[j].token;
-                uint256 lpFee = accruedFees[i].feeUpdates[j].lpFee;
                 uint256 fundingFee = accruedFees[i].feeUpdates[j].fundingFee;
+                uint256 reserveFee = accruedFees[i].feeUpdates[j].reserveFee;
 
                 uint256 beforeExchangeRate = lpTokens[token].exchangeRate();
 
-                if (lpFee > 0) {
-                    // Distribute the LP fee to all LPToken holders
-                    lpTokens[token].distributeYield(lpFee);
+                if (fundingFee > 0) {
+                    // Distribute funding fee to all LPToken holders
+                    lpTokens[token].distributeYield(fundingFee);
 
-                    // Verify the exchange rate increase is not more than 1% after distributing LP fees
+                    // Verify the exchange rate increase is not more than 1%
                     if (((lpTokens[token].exchangeRate() - beforeExchangeRate) * 10_000) / beforeExchangeRate > 100) {
                         revert ErrorsLib.ExchangeRateIncreaseTooMuch();
                     }
                 }
 
-                // Accumulate the funding rate fee into the total funding rate fees
-                fundingFees += fundingFee;
-                // Subtract the funding fee amount and LP fee amount from the trader's position for this token
-                positions[trader][token] -= (lpFee + fundingFee).toInt256();
+                if (reserveFee > 0) {
+                    reserveFees[token] += reserveFee;
+                }
+                // Subtract reserve fee and funding fee from the trader's position
+                positions[trader][token] -= (reserveFee + fundingFee).toInt256();
             }
 
             lastEpochUpdateTimestamp[trader] = block.timestamp;
@@ -234,27 +232,13 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         emit Liquidated(request.trader, msg.sender, request.positionUpdates, request.claimCollaterals);
     }
 
-    /// @notice Allows fee withdrawer to claim accumulated funding fees
-    /// @dev Only callable by feeWithdrawer address
-    /// @param underlying The token address of the fees to withdraw
-    /// @param recipient The address that will receive the fees
-    /// @param amount The amount of fees to withdraw
-    function withdrawFundingFees(address underlying, address recipient, uint256 amount) external {
-        require(msg.sender == feeWithdrawer, ErrorsLib.OnlyFeeWithdrawer());
-        require(amount <= fundingFees, ErrorsLib.InsufficientFundingFees());
-
-        fundingFees -= amount;
-
-        // Withdraw underlying from vault
-        IERC20(underlying).safeTransfer(recipient, amount);
-    }
-
     /// @notice Transfers underlying assets from vault to recipient
     /// @dev Only callable by supported LP tokens
     /// @param to Recipient of the underlying assets
     /// @param amount Amount of underlying assets to transfer
-    function transferOut(address to, uint256 amount) external {
+    function pay(address to, uint256 amount) external {
         require(supportedMarkets[msg.sender], ErrorsLib.OnlyLpToken());
+        require(amount <= LPToken(msg.sender).totalUnderlying(), ErrorsLib.InsufficientUnderlying());
 
         // Each LP token can only transfer its own underlying token
         IERC20(LPToken(msg.sender).underlying()).safeTransfer(to, amount);
@@ -330,6 +314,21 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         emit MarketListed(address(lpToken));
     }
 
+    /// @notice Allows fee withdrawer to claim accumulated funding fees
+    /// @dev Only callable by feeWithdrawer address
+    /// @param underlying The token address of the fees to withdraw
+    /// @param recipient The address that will receive the fees
+    /// @param amount The amount of fees to withdraw
+    function withdrawReserve(address underlying, address recipient, uint256 amount) external {
+        require(msg.sender == feeWithdrawer, ErrorsLib.OnlyFeeWithdrawer());
+        require(amount <= reserveFees[underlying], ErrorsLib.InsufficientFundingFees());
+
+        reserveFees[underlying] -= amount;
+
+        // Withdraw underlying from vault
+        IERC20(underlying).safeTransfer(recipient, amount);
+    }
+
     /// @notice Updates native pool whitelist status
     /// @dev Only callable by owner
     /// @param isActive to whitelist, false to remove from whitelist
@@ -337,7 +336,6 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         require(pool != address(0), ErrorsLib.ZeroAddress());
 
         isNativePools[pool] = isActive;
-        poolArray.push(pool);
 
         emit NativePoolUpdated(pool, isActive);
     }
