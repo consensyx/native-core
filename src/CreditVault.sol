@@ -375,6 +375,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         require(liquidator != address(0), ErrorsLib.ZeroAddress());
 
         isLiquidators[liquidator] = status;
+
+        emit LiquidatorSet(liquidator, status);
     }
 
     /// @notice Updates the authorized signer for permissioned operations
@@ -385,6 +387,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         require(_signer != address(0), ErrorsLib.ZeroAddress());
 
         signer = _signer;
+
+        emit SignerSet(_signer);
     }
 
     /// @notice Updates the authorized epoch updater address
@@ -395,6 +399,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         require(_epochUpdater != address(0), ErrorsLib.ZeroAddress());
 
         epochUpdater = _epochUpdater;
+
+        emit EpochUpdaterSet(_epochUpdater);
     }
 
     /// @notice Updates the authorized fee withdrawer address
@@ -405,6 +411,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         require(_feeWithdrawer != address(0), ErrorsLib.ZeroAddress());
 
         feeWithdrawer = _feeWithdrawer;
+
+        emit FeeWithdrawerSet(_feeWithdrawer);
     }
 
     /*//////////////////////////////////////////////////////////////////////////

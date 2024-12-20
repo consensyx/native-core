@@ -28,6 +28,9 @@ interface INativeRouter is IQuote {
     /// @notice Emitted when ETH is refunded
     event RefundETH(address recipient, uint256 amount);
 
+    /// @notice Emitted when ERC20 tokens are refunded
+    event RefundERC20(address token, address recipient, uint256 amount);
+
     // @notice Emitted when a signer's status is updated
     event SignerUpdated(address signer, bool isSigner);
 
@@ -38,4 +41,10 @@ interface INativeRouter is IQuote {
 
     /// @notice Emitted when permit widget fees are withdrawn
     event WidgetFeesWithdrawn(address indexed recipient, address token, uint256 amount);
+
+    /// @notice Emitted when WETH9 is unwrapped
+    event UnwrapWETH9(address indexed recipient, uint256 amount);
+
+    /// @notice Emitted when router is whitelisted or blacklisted
+    event WhitelistRouterSet(address indexed router, bool isWhitelisted);
 }

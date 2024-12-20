@@ -129,4 +129,16 @@ interface ICreditVault {
     /// @param pool The address of the native pool
     /// @param isActive The new status of the pool
     event NativePoolUpdated(address indexed pool, bool isActive);
+
+    /// @notice Emitted when liquidator is set
+    event LiquidatorSet(address liquidator, bool status);
+
+    /// @notice Emitted when signer is set
+    event SignerSet(address signer);
+
+    /// @notice Emitted when epoch updater is set
+    event EpochUpdaterSet(address epochUpdater);
+
+    /// @notice Emitted when fee withdrawer is set
+    event FeeWithdrawerSet(address feeWithdrawer);
 }

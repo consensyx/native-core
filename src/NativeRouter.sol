@@ -216,9 +216,12 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @param recipient The address to receive the refunded tokens
     /// @param amount The amount of tokens to refund
     function refundERC20(address token, address recipient, uint256 amount) public payable onlyOwner nonReentrant {
-        TransferHelper.safeTransfer(
-            token, recipient, Math.min(IERC20(token).balanceOf(address(this)) - permitWidgetFee[token], amount)
-        );
+        // Note: We need to subtract the widget fee from the balance of the token in the contract
+        amount = Math.min(IERC20(token).balanceOf(address(this)) - permitWidgetFee[token], amount);
+
+        TransferHelper.safeTransfer(token, recipient, amount);
+
+        emit RefundERC20(token, recipient, amount);
     }
 
     /// @notice Emergency function to unwrap WETH9 stuck in the contract
@@ -231,7 +234,11 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
         uint256 beforeETHBalance = address(this).balance;
         IWETH9(WETH9).withdraw(amount);
 
-        TransferHelper.safeTransferETH(recipient, address(this).balance - beforeETHBalance);
+        amount = address(this).balance - beforeETHBalance;
+
+        TransferHelper.safeTransferETH(recipient, amount);
+
+        emit UnwrapWETH9(recipient, amount);
     }
 
     /// @notice Set the authorized signer for widget fee and auto-sign messages
@@ -254,6 +261,8 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
 
         for (uint256 i; i < routers.length; ++i) {
             whitelistRouter[routers[i]] = values[i];
+
+            emit WhitelistRouterSet(routers[i], values[i]);
         }
     }
 
