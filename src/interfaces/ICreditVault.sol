@@ -49,13 +49,11 @@ interface ICreditVault {
     /// @param deadline Timestamp after which the request expires
     /// @param trader Address of the trader whose positions are being settled
     /// @param positionUpdates Array of position changes to be settled
-    /// @param recipient Address to receive settlement proceeds
     struct SettlementRequest {
         uint256 nonce;
         uint256 deadline;
         address trader;
         TokenAmountInt[] positionUpdates;
-        address recipient;
     }
 
     /// @notice Request parameters for collateral removal
@@ -63,13 +61,11 @@ interface ICreditVault {
     /// @param deadline Timestamp after which the request expires
     /// @param trader Address of the trader removing collateral
     /// @param tokens Array of collateral tokens to be removed
-    /// @param recipient Address to receive the removed collateral
     struct RemoveCollateralRequest {
         uint256 nonce;
         uint256 deadline;
         address trader;
         TokenAmountUint[] tokens;
-        address recipient;
     }
 
     /// @notice Request parameters for position liquidation
@@ -78,14 +74,12 @@ interface ICreditVault {
     /// @param trader Address of the trader being liquidated
     /// @param positionUpdates Array of position changes from liquidation
     /// @param claimCollaterals Array of collateral tokens to be claimed
-    /// @param recipient Address to receive liquidation proceeds
     struct LiquidationRequest {
         uint256 nonce;
         uint256 deadline;
         address trader;
         TokenAmountInt[] positionUpdates;
         TokenAmountUint[] claimCollaterals;
-        address recipient;
     }
 
     /// @notice Emitted when a new market (LP token) is listed

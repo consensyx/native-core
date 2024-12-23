@@ -4,7 +4,6 @@ pragma solidity 0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
-
 import {EIP712, ECDSA} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
 import "./libraries/ConstantsLib.sol";
@@ -45,6 +44,9 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @notice map from underlying address to LP token
     mapping(address => LPToken) public lpTokens;
 
+    // @notice Mapping to track used nonces for preventing replay attacks
+    mapping(uint256 => bool) public nonces;
+
     /// @notice  trader_address => underlying token => amount (positive for long, negative for short)
     mapping(address => mapping(address => int256)) public positions;
 
@@ -54,17 +56,18 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @dev If a LP token is supported
     mapping(address => bool) public supportedMarkets;
 
-    /// @notice relate settler address to trader (trader_address => settler_address)
-    mapping(address => address) public settlers;
+    /// @notice whitelist for traders (Market Makers)
+    mapping(address => bool) public traders;
 
-    /// @notice whitelist for traders (RFQ providers)
-    mapping(address => bool) public isTraders;
+    /// @notice Maps trader address to settler address which can settle positions on behalf of trader
+    mapping(address => address) public traderToSettler;
+
+    /// @notice maps trader to their payout/withdrawal address
+    /// @dev Address receives tokens from liquidations, settlements and collateral operations
+    mapping(address => address) public traderToPayout;
 
     /// @notice whitelist for liquidators
-    mapping(address => bool) public isLiquidators;
-
-    // @notice Mapping to track used nonces for preventing replay attacks
-    mapping(uint256 => bool) public nonces;
+    mapping(address => bool) public liquidators;
 
     /// @notice Mapping of authorized isNativePools this vault is serving as treasury to
     mapping(address => bool) public isNativePools;
@@ -78,23 +81,21 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @notice Callback function called by NativeRFQPool after swap execution to update trader positions
     /// @dev Only callable by whitelisted NativePools, it's called after the swap is executed
     /// @param trader The address of the market maker
-    /// @param sellerToken The address of the token that the swapper is selling, i.e. tokenIn
+    /// @param tokenIn The address of the token that the swapper is selling
     /// @param amountIn The amount of the token that the swapper is selling
-    /// @param buyerToken The address of the token that the swapper is buying, i.e. tokenOut
+    /// @param tokenOut The address of the token that the swapper is buying
     /// @param amountOut The amount of the token that the swapper is buying
     function swapCallback(
         address trader,
-        address sellerToken,
+        address tokenIn,
         int256 amountIn,
-        address buyerToken,
+        address tokenOut,
         int256 amountOut
     ) external {
         require(isNativePools[msg.sender], ErrorsLib.OnlyNativePool());
 
-        // Increase seller token position
-        positions[trader][sellerToken] += amountIn;
-        // Decrease buyer token position
-        positions[trader][buyerToken] -= amountOut;
+        positions[trader][tokenIn] += amountIn;
+        positions[trader][tokenOut] -= amountOut;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -103,11 +104,6 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
 
     /// @notice Updates funding fees for traders at the end of each epoch
     /// @dev Only callable by the epoch updater
-    /// @dev For each trader:
-    ///      1. Checks if minimum epoch interval has elapsed
-    ///      2. Distributes LP fees to LP token holders
-    ///      3. Accumulates funding fees
-    ///      4. Updates trader positions by deducting fees
     /// @param accruedFees Array of funding fee updates for different traders
     function epochUpdate(AccruedFundingFee[] calldata accruedFees) external {
         require(msg.sender == epochUpdater, ErrorsLib.OnlyEpochUpdater());
@@ -150,7 +146,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     }
 
     /// @notice Called by traders to settle the positions
-    /// @dev This transaction requires off-chain calculation to verify if the trader's credit meets the criteria. See comments for the calculation logic.
+    /// @dev This transaction requires off-chain calculation to verify if the trader's credit meets the criteria.
     /// @param request The struct of the settlement request containing info of long and short positions to settle
     /// @param signature The signature of the settlement request
     function settle(
@@ -161,6 +157,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
 
         _updatePositions(request.positionUpdates, request.trader);
 
+        address payout = traderToPayout[request.trader];
         // execute token transfers
         for (uint256 i; i < request.positionUpdates.length; ++i) {
             address token = request.positionUpdates[i].token;
@@ -169,7 +166,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
             if (amount > 0) {
                 IERC20(token).safeTransferFrom(msg.sender, address(this), amount.toUint256());
             } else {
-                IERC20(token).safeTransfer(request.recipient, (-amount).toUint256());
+                IERC20(token).safeTransfer(payout, (-amount).toUint256());
             }
         }
 
@@ -190,11 +187,12 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
             creditCollateral[request.trader][request.tokens[i].token] -= request.tokens[i].amount;
         }
 
+        address payout = traderToPayout[request.trader];
         for (uint256 i; i < request.tokens.length; ++i) {
             address token = request.tokens[i].token;
             uint256 amount = request.tokens[i].amount;
 
-            IERC20(token).safeTransfer(request.recipient, amount);
+            IERC20(token).safeTransfer(payout, amount);
         }
 
         emit CollateralRemoved(request.trader, request.tokens);
@@ -209,6 +207,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
 
         _updatePositions(request.positionUpdates, request.trader);
 
+        address payout = traderToPayout[request.trader];
+
         for (uint256 i; i < request.claimCollaterals.length; ++i) {
             creditCollateral[request.trader][request.claimCollaterals[i].token] -= request.claimCollaterals[i].amount;
         }
@@ -216,17 +216,17 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         for (uint256 i; i < request.positionUpdates.length; ++i) {
             address token = request.positionUpdates[i].token;
             int256 amount = request.positionUpdates[i].amount;
+
             if (amount > 0) {
                 IERC20(token).safeTransferFrom(msg.sender, address(this), amount.toUint256());
             } else {
-                IERC20(token).safeTransfer(request.recipient, (-amount).toUint256());
+                IERC20(token).safeTransfer(payout, (-amount).toUint256());
             }
         }
 
         for (uint256 i; i < request.claimCollaterals.length; ++i) {
             address token = request.claimCollaterals[i].token;
-            uint256 amount = request.claimCollaterals[i].amount;
-            IERC20(token).safeTransfer(request.recipient, amount);
+            IERC20(token).safeTransfer(payout, request.claimCollaterals[i].amount);
         }
 
         emit Liquidated(request.trader, msg.sender, request.positionUpdates, request.claimCollaterals);
@@ -359,12 +359,14 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @dev Only callable by owner
     /// @param trader Address to configure trading permissions for
     /// @param settler Address authorized to settle positions on trader's behalf
-    /// @param isTrader True to enable trading, false to revoke permissions
-    function setTrader(address trader, address settler, bool isTrader) external onlyOwner {
-        require(trader != address(0) && settler != address(0), ErrorsLib.ZeroAddress());
+    /// @param payout Address authorized to receive tokens from liquidations, settlements and collateral operations
+    /// @param status True to enable trading, false to revoke permissions
+    function setTrader(address trader, address settler, address payout, bool status) external onlyOwner {
+        require(trader != address(0) && settler != address(0) && payout != address(0), ErrorsLib.ZeroAddress());
 
-        isTraders[trader] = isTrader;
-        settlers[trader] = settler;
+        traders[trader] = status;
+        traderToSettler[trader] = settler;
+        traderToPayout[trader] = payout;
     }
 
     /// @notice Set or remove liquidator permissions
@@ -374,7 +376,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     function setLiquidator(address liquidator, bool status) external onlyOwner {
         require(liquidator != address(0), ErrorsLib.ZeroAddress());
 
-        isLiquidators[liquidator] = status;
+        liquidators[liquidator] = status;
 
         emit LiquidatorSet(liquidator, status);
     }
@@ -455,7 +457,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
                 request.deadline,
                 request.trader,
                 keccak256(abi.encode(request.positionUpdates)),
-                request.recipient
+                traderToPayout[request.trader]
             )
         );
         bytes32 digest = _hashTypedDataV4(msgHash);
@@ -479,7 +481,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
                 request.deadline,
                 request.trader,
                 keccak256(abi.encode(request.tokens)),
-                request.recipient
+                traderToPayout[request.trader]
             )
         );
         bytes32 digest = _hashTypedDataV4(msgHash);
@@ -504,7 +506,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
                 request.trader,
                 keccak256(abi.encode(request.positionUpdates)),
                 keccak256(abi.encode(request.claimCollaterals)),
-                request.recipient
+                traderToPayout[request.trader]
             )
         );
         bytes32 digest = _hashTypedDataV4(msgHash);
@@ -519,12 +521,14 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
 
     /// @notice Separate the address of trader signer and settlement wallet as the frequency of the 2 operations is very different and trader could have different security setup for 2 addresses
     modifier onlyTraderOrSettler(address trader) {
-        require(isTraders[msg.sender] || (isTraders[trader] && msg.sender == settlers[trader]), ErrorsLib.OnlyTrader());
+        require(
+            traders[msg.sender] || (traders[trader] && msg.sender == traderToSettler[trader]), ErrorsLib.OnlyTrader()
+        );
         _;
     }
 
     modifier onlyLiquidator() {
-        require(isLiquidators[msg.sender], ErrorsLib.OnlyLiquidator());
+        require(liquidators[msg.sender], ErrorsLib.OnlyLiquidator());
         _;
     }
 }

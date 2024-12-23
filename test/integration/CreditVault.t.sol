@@ -28,7 +28,7 @@ contract CreditVaultTest is BaseTest {
         // Set deployer as epochUpdater and setup trader
         vm.startPrank(deployer);
         creditVault.setEpochUpdater(deployer);
-        creditVault.setTrader(halo, halo, true);
+        creditVault.setTrader(halo, halo, halo, true);
         vm.stopPrank();
     }
 
@@ -417,46 +417,52 @@ contract CreditVaultTest is BaseTest {
         // Test 1: Non-owner cannot call setTrader
         vm.startPrank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
-        creditVault.setTrader(newTrader, newTrader, true);
+        creditVault.setTrader(newTrader, newTrader, newTrader, true);
         vm.stopPrank();
 
         // Test 2: Cannot set zero address as trader or settler
         vm.startPrank(deployer);
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
-        creditVault.setTrader(address(0), newTrader, true);
+        creditVault.setTrader(address(0), newTrader, newTrader, true);
 
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
-        creditVault.setTrader(newTrader, address(0), true);
+        creditVault.setTrader(newTrader, address(0), newTrader, true);
 
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
-        creditVault.setTrader(address(0), address(0), true);
+        creditVault.setTrader(newTrader, newTrader, address(0), true);
+
+        vm.expectRevert(ErrorsLib.ZeroAddress.selector);
+        creditVault.setTrader(address(0), address(0), address(0), true);
         vm.stopPrank();
 
         // Test 3: Successfully enable trader and verify states
         vm.startPrank(deployer);
-        creditVault.setTrader(newTrader, newTrader, true);
+        creditVault.setTrader(newTrader, newTrader, newTrader, true);
 
         // Verify states
-        assertTrue(creditVault.isTraders(newTrader), "Trader should be enabled");
-        assertEq(creditVault.settlers(newTrader), newTrader, "Settler address should be set correctly");
+        assertTrue(creditVault.traders(newTrader), "Trader should be enabled");
+        assertEq(creditVault.traderToSettler(newTrader), newTrader, "Settler address should be set correctly");
+        assertEq(creditVault.traderToPayout(newTrader), newTrader, "Payout address should be set correctly");
         vm.stopPrank();
 
         // Test 4: Successfully disable trader and verify states
         vm.startPrank(deployer);
-        creditVault.setTrader(newTrader, newTrader, false);
+        creditVault.setTrader(newTrader, newTrader, newTrader, false);
 
         // Verify states after disable
-        assertFalse(creditVault.isTraders(newTrader), "Trader should be disabled");
-        assertEq(creditVault.settlers(newTrader), newTrader, "Settler address should remain unchanged");
+        assertFalse(creditVault.traders(newTrader), "Trader should be disabled");
+        assertEq(creditVault.traderToSettler(newTrader), newTrader, "Settler address should remain unchanged");
+        assertEq(creditVault.traderToPayout(newTrader), newTrader, "Payout address should remain unchanged");
         vm.stopPrank();
 
         // Test 5: Can re-enable disabled trader
         vm.startPrank(deployer);
-        creditVault.setTrader(newTrader, newTrader, true);
+        creditVault.setTrader(newTrader, newTrader, newTrader, true);
 
         // Verify states after re-enable
-        assertTrue(creditVault.isTraders(newTrader), "Trader should be re-enabled");
-        assertEq(creditVault.settlers(newTrader), newTrader, "Settler address should remain unchanged");
+        assertTrue(creditVault.traders(newTrader), "Trader should be re-enabled");
+        assertEq(creditVault.traderToSettler(newTrader), newTrader, "Settler address should remain unchanged");
+        assertEq(creditVault.traderToPayout(newTrader), newTrader, "Payout address should remain unchanged");
         vm.stopPrank();
     }
 
@@ -480,7 +486,7 @@ contract CreditVaultTest is BaseTest {
         creditVault.setLiquidator(newLiquidator, true);
 
         // Verify state
-        assertTrue(creditVault.isLiquidators(newLiquidator), "Liquidator should be enabled");
+        assertTrue(creditVault.liquidators(newLiquidator), "Liquidator should be enabled");
         vm.stopPrank();
 
         // Test 4: Successfully disable liquidator and verify state
@@ -488,7 +494,7 @@ contract CreditVaultTest is BaseTest {
         creditVault.setLiquidator(newLiquidator, false);
 
         // Verify state after disable
-        assertFalse(creditVault.isLiquidators(newLiquidator), "Liquidator should be disabled");
+        assertFalse(creditVault.liquidators(newLiquidator), "Liquidator should be disabled");
         vm.stopPrank();
 
         // Test 5: Can re-enable disabled liquidator
@@ -496,7 +502,7 @@ contract CreditVaultTest is BaseTest {
         creditVault.setLiquidator(newLiquidator, true);
 
         // Verify state after re-enable
-        assertTrue(creditVault.isLiquidators(newLiquidator), "Liquidator should be re-enabled");
+        assertTrue(creditVault.liquidators(newLiquidator), "Liquidator should be re-enabled");
         vm.stopPrank();
     }
 
@@ -700,7 +706,7 @@ contract CreditVaultTest is BaseTest {
 
         // 2. Setup alice as trader and deployer as signer
         vm.startPrank(deployer);
-        creditVault.setTrader(alice, alice, true);
+        creditVault.setTrader(alice, alice, bob, true);
         creditVault.setSigner(deployer); // Use deployer as the signer
         vm.stopPrank();
 
@@ -765,11 +771,10 @@ contract CreditVaultTest is BaseTest {
             nonce: 0,
             deadline: block.timestamp + 3600, // 1 hour from now
             trader: trader,
-            positionUpdates: positionUpdates,
-            recipient: recipient
+            positionUpdates: positionUpdates
         });
 
-        bytes32 digest = SignatureUtils.generateSettleSignature(request, address(creditVault));
+        bytes32 digest = SignatureUtils.generateSettleSignature(request, recipient, address(creditVault));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
         bytes memory signature = abi.encodePacked(r, s, v);
 
@@ -925,7 +930,7 @@ contract CreditVaultTest is BaseTest {
         vm.startPrank(deployer);
         lpUSDC.setMinDeposit(100);
         // Set alice as trader and settler
-        creditVault.setTrader(alice, alice, true);
+        creditVault.setTrader(alice, alice, alice, true);
         vm.stopPrank();
 
         vm.startPrank(alice);
@@ -949,12 +954,11 @@ contract CreditVaultTest is BaseTest {
             nonce: 0,
             deadline: block.timestamp + 3600,
             trader: alice,
-            tokens: removeTokens,
-            recipient: alice
+            tokens: removeTokens
         });
 
         // Generate signature
-        bytes32 digest = SignatureUtils.generateRemoveCollateralSignature(request, address(creditVault));
+        bytes32 digest = SignatureUtils.generateRemoveCollateralSignature(request, alice, address(creditVault));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
         bytes memory signature = abi.encodePacked(r, s, v);
 
@@ -979,11 +983,10 @@ contract CreditVaultTest is BaseTest {
             nonce: 1,
             deadline: block.timestamp - 1, // Expired deadline
             trader: alice,
-            tokens: removeTokens,
-            recipient: alice
+            tokens: removeTokens
         });
 
-        digest = SignatureUtils.generateRemoveCollateralSignature(request, address(creditVault));
+        digest = SignatureUtils.generateRemoveCollateralSignature(request, alice, address(creditVault));
         (v, r, s) = vm.sign(deployerKey, digest);
         signature = abi.encodePacked(r, s, v);
 
@@ -997,13 +1000,12 @@ contract CreditVaultTest is BaseTest {
             nonce: 2,
             deadline: block.timestamp + 3600,
             trader: alice,
-            tokens: removeTokens,
-            recipient: alice
+            tokens: removeTokens
         });
 
         // Use wrong private key to sign
         uint256 wrongKey = 0x12345;
-        digest = SignatureUtils.generateRemoveCollateralSignature(request, address(creditVault));
+        digest = SignatureUtils.generateRemoveCollateralSignature(request, alice, address(creditVault));
         (v, r, s) = vm.sign(wrongKey, digest);
         signature = abi.encodePacked(r, s, v);
 
@@ -1022,6 +1024,7 @@ contract CreditVaultTest is BaseTest {
         creditVault.setNativePool(address(rfqPool), true);
         creditVault.setLiquidator(bob, true);
         creditVault.setSigner(deployer);
+        creditVault.setTrader(alice, alice, bob, true);
         vm.stopPrank();
 
         // Simulate a trade: alice sells USDC to buy WETH
@@ -1080,14 +1083,14 @@ contract CreditVaultTest is BaseTest {
                 deadline: block.timestamp + 3600,
                 trader: alice,
                 positionUpdates: positionUpdates,
-                claimCollaterals: claimCollaterals,
-                recipient: bob
+                claimCollaterals: claimCollaterals
             });
 
             // 5. Generate and sign liquidation request
-            bytes32 digest = SignatureUtils.generateLiquidationSignature(request, address(creditVault));
+            bytes32 digest = SignatureUtils.generateLiquidationSignature(
+                request, creditVault.traderToPayout(alice), address(creditVault)
+            );
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
-            // bytes memory signature = abi.encodePacked(r, s, v);
             signature = abi.encodePacked(r, s, v);
         }
 
@@ -1157,11 +1160,10 @@ contract CreditVaultTest is BaseTest {
             deadline: block.timestamp + 3600,
             trader: alice,
             positionUpdates: positionUpdates,
-            claimCollaterals: claimCollaterals,
-            recipient: bob
+            claimCollaterals: claimCollaterals
         });
 
-        bytes32 digest = SignatureUtils.generateLiquidationSignature(request, address(creditVault));
+        bytes32 digest = SignatureUtils.generateLiquidationSignature(request, bob, address(creditVault));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
         bytes memory signature = abi.encodePacked(r, s, v);
 

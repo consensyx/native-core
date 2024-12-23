@@ -342,11 +342,11 @@ contract BaseTest is Test {
         creditVault.setNativePool(address(gsrRFQPool), true);
 
         // Credit vault set market marker address
-        creditVault.setTrader(halo, halo, true);
-        creditVault.setTrader(tokka, tokka, true);
-        creditVault.setTrader(quadratic, quadratic, true);
-        creditVault.setTrader(timeResearch, timeResearch, true);
-        creditVault.setTrader(gsr, gsr, true);
+        creditVault.setTrader(halo, halo, halo, true);
+        creditVault.setTrader(tokka, tokka, tokka, true);
+        creditVault.setTrader(quadratic, quadratic, quadratic, true);
+        creditVault.setTrader(timeResearch, timeResearch, timeResearch, true);
+        creditVault.setTrader(gsr, gsr, gsr, true);
 
         vm.stopPrank();
     }
