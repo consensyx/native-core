@@ -108,21 +108,21 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     function epochUpdate(AccruedFundingFee[] calldata accruedFees) external {
         require(msg.sender == epochUpdater, ErrorsLib.OnlyEpochUpdater());
 
-        for (uint256 i = 0; i < accruedFees.length; ++i) {
+        for (uint256 i; i < accruedFees.length; ++i) {
             address trader = accruedFees[i].trader;
 
             if (block.timestamp - lastEpochUpdateTimestamp[trader] < EPOCH_UPDATE_INTERVAL) {
                 revert ErrorsLib.EpochUpdateInCoolDown();
             }
 
-            for (uint256 j = 0; j < accruedFees[i].feeUpdates.length; ++j) {
+            for (uint256 j; j < accruedFees[i].feeUpdates.length; ++j) {
                 address token = accruedFees[i].feeUpdates[j].token;
                 uint256 fundingFee = accruedFees[i].feeUpdates[j].fundingFee;
                 uint256 reserveFee = accruedFees[i].feeUpdates[j].reserveFee;
 
-                uint256 beforeExchangeRate = lpTokens[token].exchangeRate();
-
                 if (fundingFee > 0) {
+                    uint256 beforeExchangeRate = lpTokens[token].exchangeRate();
+
                     // Distribute funding fee to all LPToken holders
                     lpTokens[token].distributeYield(fundingFee);
 
@@ -315,7 +315,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     }
 
     /// @notice Allows fee withdrawer to claim accumulated funding fees
-    /// @dev Only callable by feeWithdrawer address
+    /// @dev Only callable by feeWithdrawer
     /// @param underlying The token address of the fees to withdraw
     /// @param recipient The address that will receive the fees
     /// @param amount The amount of fees to withdraw
@@ -428,7 +428,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     }
 
     function _updatePositions(ICreditVault.TokenAmountInt[] memory positionUpdates, address trader) internal {
-        for (uint256 i; i < positionUpdates.length; ++i) {
+        uint256 updatesLength = positionUpdates.length;
+        for (uint256 i; i < updatesLength; ++i) {
             address token = positionUpdates[i].token;
             int256 amount = positionUpdates[i].amount;
             int256 newPositionValue = positions[trader][token] + amount;
