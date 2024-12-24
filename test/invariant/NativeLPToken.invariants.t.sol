@@ -2,20 +2,20 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {LPToken} from "../../src/LPToken.sol";
-import {LPTokenHandler} from "./handlers/LPTokenHandler.sol";
+import {NativeLPToken} from "../../src/NativeLPToken.sol";
+import {NativeLPTokenHandler} from "./handlers/NativeLPTokenHandler.sol";
 import {AddressSet} from "./helpers/AddressSet.sol";
 import {BaseTest} from "../BaseTest.t.sol";
 
-contract LPTokenInvariants is BaseTest {
-    LPToken public lpToken;
-    LPTokenHandler public handler;
+contract NativeLPTokenInvariants is BaseTest {
+    NativeLPToken public lpToken;
+    NativeLPTokenHandler public handler;
 
     function setUp() public override {
         super.setUp();
 
         lpToken = lpUSDC;
-        handler = new LPTokenHandler(deployer, lpUSDC);
+        handler = new NativeLPTokenHandler(deployer, lpUSDC);
 
         // Target handler for invariant testing
         targetContract(address(handler));

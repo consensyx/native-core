@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 
-import {LPToken} from "../../src/LPToken.sol";
+import {NativeLPToken} from "../../src/NativeLPToken.sol";
 import {BaseTest} from "../BaseTest.t.sol";
 import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract LPTokenTest is BaseTest {
+contract NativeLPTokenTest is BaseTest {
     function setUp() public override {
         super.setUp();
     }
@@ -283,14 +283,14 @@ contract LPTokenTest is BaseTest {
         uint256 firstMinDeposit = 1000;
         vm.startPrank(deployer); // Ensure using deployer account
         vm.expectEmit(false, false, false, true, address(lpUSDC));
-        emit LPToken.MinDepositUpdated(currentMinDeposit, firstMinDeposit);
+        emit NativeLPToken.MinDepositUpdated(currentMinDeposit, firstMinDeposit);
         lpUSDC.setMinDeposit(firstMinDeposit);
         assertEq(lpUSDC.minDeposit(), firstMinDeposit);
 
         // Owner updates to second value
         uint256 secondMinDeposit = 2000;
         vm.expectEmit(false, false, false, true, address(lpUSDC));
-        emit LPToken.MinDepositUpdated(firstMinDeposit, secondMinDeposit);
+        emit NativeLPToken.MinDepositUpdated(firstMinDeposit, secondMinDeposit);
         lpUSDC.setMinDeposit(secondMinDeposit);
         assertEq(lpUSDC.minDeposit(), secondMinDeposit);
         vm.stopPrank();
@@ -307,14 +307,14 @@ contract LPTokenTest is BaseTest {
 
         uint256 firstInterval = 1 hours;
         vm.expectEmit(false, false, false, true, address(lpUSDC));
-        emit LPToken.MinRedeemIntervalUpdated(firstInterval);
+        emit NativeLPToken.MinRedeemIntervalUpdated(firstInterval);
         lpUSDC.setMinRedeemInterval(firstInterval);
         assertEq(lpUSDC.minRedeemInterval(), firstInterval);
 
         // Owner updates to second value
         uint256 secondInterval = 2 hours;
         vm.expectEmit(false, false, false, true, address(lpUSDC));
-        emit LPToken.MinRedeemIntervalUpdated(secondInterval);
+        emit NativeLPToken.MinRedeemIntervalUpdated(secondInterval);
         lpUSDC.setMinRedeemInterval(secondInterval);
         assertEq(lpUSDC.minRedeemInterval(), secondInterval);
 

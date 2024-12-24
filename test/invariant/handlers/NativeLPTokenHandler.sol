@@ -4,17 +4,17 @@ pragma solidity ^0.8.28;
 import {StdUtils} from "forge-std/StdUtils.sol";
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {CommonBase} from "forge-std/Base.sol";
-import {LPToken} from "../../../src/LPToken.sol";
+import {NativeLPToken} from "../../../src/NativeLPToken.sol";
 import {AddressSet, LibAddressSet} from "../helpers/AddressSet.sol";
 import {MockERC20} from "../../../src/test/MockERC20.sol";
 
 import {console} from "forge-std/console.sol";
 
-contract LPTokenHandler is CommonBase, StdUtils, StdInvariant {
+contract NativeLPTokenHandler is CommonBase, StdUtils, StdInvariant {
     using LibAddressSet for AddressSet;
 
     address public deployer;
-    LPToken public lpToken;
+    NativeLPToken public lpToken;
     MockERC20 public underlying;
 
     AddressSet internal _actors;
@@ -27,7 +27,7 @@ contract LPTokenHandler is CommonBase, StdUtils, StdInvariant {
     uint256 public ghost_vaultBalance;
     uint256 public ghost_totalUnderlying;
 
-    constructor(address _deployer, LPToken _lpToken) {
+    constructor(address _deployer, NativeLPToken _lpToken) {
         deployer = _deployer;
         lpToken = _lpToken;
         underlying = MockERC20(address(lpToken.underlying()));

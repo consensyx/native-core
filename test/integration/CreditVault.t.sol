@@ -8,7 +8,7 @@ import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 
 import {ICreditVault} from "../../src/interfaces/ICreditVault.sol";
 import {MockERC20} from "../../src/test/MockERC20.sol";
-import {LPToken} from "../../src/LPToken.sol";
+import {NativeLPToken} from "../../src/NativeLPToken.sol";
 import {NativeRFQPool} from "../../src/NativeRFQPool.sol";
 import {SignatureUtils} from "../helpers/SignatureUtils.sol";
 import {BaseTest} from "../BaseTest.t.sol";
@@ -254,7 +254,7 @@ contract CreditVaultTest is BaseTest {
     function test_supportMarket() public {
         // Prepare a new LP token for testing
         MockERC20 newToken = new MockERC20("New Token", "NEW", 18);
-        LPToken newLPToken = new LPToken("LP New Token", "lpNEW", address(newToken), address(creditVault));
+        NativeLPToken newLPToken = new NativeLPToken("LP New Token", "lpNEW", address(newToken), address(creditVault));
 
         // Test 1: Non-owner cannot call supportMarket
         vm.prank(alice);
@@ -262,7 +262,7 @@ contract CreditVaultTest is BaseTest {
         creditVault.supportMarket(newLPToken);
 
         // Test 2: LP token with mismatched creditVault address
-        LPToken wrongLPToken = new LPToken(
+        NativeLPToken wrongLPToken = new NativeLPToken(
             "Wrong LP Token",
             "WRONG",
             address(newToken),

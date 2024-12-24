@@ -10,7 +10,7 @@ import "./libraries/ConstantsLib.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {ICreditVault} from "./interfaces/ICreditVault.sol";
 import {SafeERC20} from "./libraries/SafeERC20.sol";
-import {LPToken} from "./LPToken.sol";
+import {NativeLPToken} from "./NativeLPToken.sol";
 
 /// @title CreditVault - Manages trader positions and collateral
 /// @notice Handles asset custody, position settlement, and LP token integration
@@ -33,7 +33,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     address public epochUpdater;
 
     /// @notice A list of all markets
-    LPToken[] public allLPTokens;
+    NativeLPToken[] public allLPTokens;
 
     /// @notice Mapping of accumulated reserveFees per token (token => fee amount)
     mapping(address => uint256) public reserveFees;
@@ -42,7 +42,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     mapping(address => uint256) public lastEpochUpdateTimestamp;
 
     /// @notice map from underlying address to LP token
-    mapping(address => LPToken) public lpTokens;
+    mapping(address => NativeLPToken) public lpTokens;
 
     // @notice Mapping to track used nonces for preventing replay attacks
     mapping(uint256 => bool) public nonces;
@@ -238,10 +238,10 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @param amount Amount of underlying assets to transfer
     function pay(address to, uint256 amount) external {
         require(supportedMarkets[msg.sender], ErrorsLib.OnlyLpToken());
-        require(amount <= LPToken(msg.sender).totalUnderlying(), ErrorsLib.InsufficientUnderlying());
+        require(amount <= NativeLPToken(msg.sender).totalUnderlying(), ErrorsLib.InsufficientUnderlying());
 
         // Each LP token can only transfer its own underlying token
-        IERC20(LPToken(msg.sender).underlying()).safeTransfer(to, amount);
+        IERC20(NativeLPToken(msg.sender).underlying()).safeTransfer(to, amount);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -291,7 +291,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @notice Lists a new market (LP token)
     /// @dev Only callable by owner
     /// @param lpToken Address of the LP token to be listed
-    function supportMarket(LPToken lpToken) external onlyOwner {
+    function supportMarket(NativeLPToken lpToken) external onlyOwner {
         // Check if market is already listed
         require(!supportedMarkets[address(lpToken)], ErrorsLib.TokenAlreadyListed());
 
@@ -309,7 +309,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         // Update storage
         lpTokens[underlying] = lpToken;
         supportedMarkets[address(lpToken)] = true;
-        allLPTokens.push(LPToken(lpToken));
+        allLPTokens.push(NativeLPToken(lpToken));
 
         emit MarketListed(address(lpToken));
     }

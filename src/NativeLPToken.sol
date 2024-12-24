@@ -12,10 +12,10 @@ import {CreditVault} from "./CreditVault.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {ReentrancyGuardTransient} from "./libraries/ReentrancyGuardTransient.sol";
 
-/// @title LPToken - Yield-bearing LP token contract
+/// @title NativeLPToken - Yield-bearing LP token contract
 /// @notice A token contract that represents liquidity provider positions and distributes yield
 /// @dev This contract manages LP shares and underlying assets, accruing yield based on protocol revenue
-contract LPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
+contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     using SafeERC20 for IERC20Metadata;
 
     /*//////////////////////////////////////////////////////////////////////////

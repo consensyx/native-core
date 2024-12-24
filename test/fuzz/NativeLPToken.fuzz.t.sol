@@ -5,11 +5,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {BaseTest} from "../BaseTest.t.sol";
-import {LPToken} from "../../src/LPToken.sol";
+import {NativeLPToken} from "../../src/NativeLPToken.sol";
 import "../../src/libraries/ConstantsLib.sol";
 import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 
-contract LPTokenFuzzTest is BaseTest {
+contract NativeLPTokenFuzzTest is BaseTest {
     // Set reasonable amount range to avoid overflow
     uint256 constant MAX_DEPOSIT = type(uint128).max;
 

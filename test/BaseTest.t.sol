@@ -2,15 +2,17 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
+
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
 import {WETH9} from "../src/test/WETH9.sol";
 import {MockERC20} from "../src/test/MockERC20.sol";
 import {CreditVault} from "../src/CreditVault.sol";
-import {LPToken} from "../src/LPToken.sol";
 import {NativeRouter} from "../src/NativeRouter.sol";
+import {NativeLPToken} from "../src/NativeLPToken.sol";
 import {NativeRFQPool} from "../src/NativeRFQPool.sol";
 import {ICreditVault} from "../src/interfaces/ICreditVault.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 contract BaseTest is Test {
     // Constants
@@ -32,10 +34,10 @@ contract BaseTest is Test {
     MockERC20 public stone;
 
     // LP Tokens
-    LPToken public lpUSDC;
-    LPToken public lpWETH;
-    LPToken public lpWBTC;
-    LPToken public lpSTONE;
+    NativeLPToken public lpUSDC;
+    NativeLPToken public lpWETH;
+    NativeLPToken public lpWBTC;
+    NativeLPToken public lpSTONE;
 
     // Add array to store integration test users
     address[] private testUsers;
@@ -94,10 +96,10 @@ contract BaseTest is Test {
         creditVault = new CreditVault();
 
         // Deploy LP Tokens
-        lpUSDC = new LPToken("Native LP: USD Coin", "NT LP USDC", address(USDC), address(creditVault));
-        lpWETH = new LPToken("Native LP: Wrapped Ether", "NT LP WETH", address(weth), address(creditVault));
-        lpWBTC = new LPToken("Native LP: Wrapped BTC", "NT LP WBTC", address(wbtc), address(creditVault));
-        lpSTONE = new LPToken("Native LP: StakeStone Ether", "NT LP STONE", address(stone), address(creditVault));
+        lpUSDC = new NativeLPToken("Native LP: USD Coin", "NT LP USDC", address(USDC), address(creditVault));
+        lpWETH = new NativeLPToken("Native LP: Wrapped Ether", "NT LP WETH", address(weth), address(creditVault));
+        lpWBTC = new NativeLPToken("Native LP: Wrapped BTC", "NT LP WBTC", address(wbtc), address(creditVault));
+        lpSTONE = new NativeLPToken("Native LP: StakeStone Ether", "NT LP STONE", address(stone), address(creditVault));
 
         // Set minimum deposit amounts based on decimals
         lpUSDC.setMinDeposit(10 ** (6 - 2)); // USDC has 6 decimals -> 10^4
@@ -223,7 +225,11 @@ contract BaseTest is Test {
         _verifySetup();
     }
 
-    function _randomAmount(uint256 balance, uint256 minPercentage, LPToken lpToken) internal view returns (uint256) {
+    function _randomAmount(
+        uint256 balance,
+        uint256 minPercentage,
+        NativeLPToken lpToken
+    ) internal view returns (uint256) {
         // If balance is 0, return 0
         if (balance == 0) return 0;
 
@@ -239,7 +245,8 @@ contract BaseTest is Test {
 
         // Generate non-zero decimal part (1-999)
         uint256 decimalPart = 1
-            + uint256(keccak256(abi.encodePacked(type(LPToken).runtimeCode, type(BaseTest).runtimeCode, balance))) % 999;
+            + uint256(keccak256(abi.encodePacked(type(NativeLPToken).runtimeCode, type(BaseTest).runtimeCode, balance)))
+                % 999;
 
         // Calculate final amount
         uint256 baseAmount = (balance * basePercentage) / 100;
@@ -259,7 +266,7 @@ contract BaseTest is Test {
         _verifyLPToken(lpSTONE, IERC20(address(stone)));
     }
 
-    function _verifyLPToken(LPToken lpToken, IERC20 underlying) internal view {
+    function _verifyLPToken(NativeLPToken lpToken, IERC20 underlying) internal view {
         uint256 totalShares = lpToken.totalShares();
         uint256 totalUnderlying = lpToken.totalUnderlying();
         uint256 totalSupply = lpToken.totalSupply();

@@ -4,10 +4,10 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {BaseTest} from "../BaseTest.t.sol";
-import {LPToken} from "../../src/LPToken.sol";
+import {NativeLPToken} from "../../src/NativeLPToken.sol";
 import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 
-contract LPTokenERC20Test is BaseTest {
+contract NativeLPTokenERC20Test is BaseTest {
     uint256 constant EIGHT_HOURS = 8 * 60 * 60;
     uint256 constant INITIAL_DEPOSIT = 1000e6; // 1000 USDC
     uint256 constant MIN_DEPOSIT = 1e6; // 1 USDC
@@ -98,7 +98,7 @@ contract LPTokenERC20Test is BaseTest {
         vm.expectEmit(true, true, false, true, address(lpUSDC));
         emit IERC20.Transfer(alice, bob, transferAmount);
         vm.expectEmit(true, true, false, true, address(lpUSDC));
-        emit LPToken.TransferShares(alice, bob, expectedShares);
+        emit NativeLPToken.TransferShares(alice, bob, expectedShares);
         lpUSDC.transfer(bob, transferAmount);
         vm.stopPrank();
     }
