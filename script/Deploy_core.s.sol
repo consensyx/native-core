@@ -27,8 +27,7 @@ contract DeployCoreScript is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         // 1. Read WETH and USDC address
-        string memory config =
-            vm.readFile(string.concat(vm.projectRoot(), "/script/chain-configs/", chainName, ".json"));
+        string memory config = vm.readFile(string.concat(vm.projectRoot(), "/script/chain-config/", chainName, ".json"));
 
         WETH = abi.decode(vm.parseJson(config, ".WETH"), (address));
         USDC = abi.decode(vm.parseJson(config, ".USDC"), (address));

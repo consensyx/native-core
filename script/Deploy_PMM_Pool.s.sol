@@ -19,8 +19,7 @@ contract DeployPMMPoolScript is Script {
         // Load deployment configurations and chain configs
         string memory coreDeployment =
             vm.readFile(string.concat(vm.projectRoot(), "/deployments/", chainName, "/Core.json"));
-        string memory config =
-            vm.readFile(string.concat(vm.projectRoot(), "/script/chain-configs/", chainName, ".json"));
+        string memory config = vm.readFile(string.concat(vm.projectRoot(), "/script/chain-config/", chainName, ".json"));
 
         // Get WETH address from chain config
         address WETH = abi.decode(vm.parseJson(config, ".WETH"), (address));

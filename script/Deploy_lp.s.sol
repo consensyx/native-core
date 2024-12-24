@@ -20,7 +20,7 @@ contract DeployLPTokenScript is Script {
         IERC20Metadata underlying = IERC20Metadata(
             abi.decode(
                 vm.parseJson(
-                    vm.readFile(string.concat(vm.projectRoot(), "/script/chain-configs/", chainName, ".json")), "USDC"
+                    vm.readFile(string.concat(vm.projectRoot(), "/script/chain-config/", chainName, ".json")), "USDC"
                 ),
                 (address)
             )
