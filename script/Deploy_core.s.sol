@@ -10,12 +10,11 @@ import {NativeRFQPool} from "../src/NativeRFQPool.sol";
 import {MockERC20} from "../src/test/MockERC20.sol";
 import {ICreditVault} from "../src/interfaces/ICreditVault.sol";
 
-import {Utils} from "./Utils.sol";
-
-contract DeployCoreScript is Utils {
+contract DeployCoreScript is Script {
     // Deployment addresses
     address public WETH;
     address public USDC;
+
     CreditVault public creditVault;
     NativeRouter public router;
     NativeRFQPool public rfqPool;
@@ -28,8 +27,11 @@ contract DeployCoreScript is Utils {
         vm.startBroadcast(deployerPrivateKey);
 
         // 1. Read WETH and USDC address
-        WETH = abi.decode(_readConfig(chainName, "WETH"), (address));
-        USDC = abi.decode(_readConfig(chainName, "USDC"), (address));
+        string memory config =
+            vm.readFile(string.concat(vm.projectRoot(), "/script/chain-configs/", chainName, ".json"));
+
+        WETH = abi.decode(vm.parseJson(config, ".WETH"), (address));
+        USDC = abi.decode(vm.parseJson(config, ".USDC"), (address));
 
         // 2. Deploy CreditVault
         creditVault = new CreditVault();
@@ -45,7 +47,6 @@ contract DeployCoreScript is Utils {
 
         // 4. Deploy RFQ Pool
         rfqPool = new NativeRFQPool(WETH, address(router), address(creditVault), "Native RFQ Pool");
-        // rfqPool.setSigner(deployer, true);
         rfqPool.setEnableCallback(true);
 
         // 5 Set credit vault configuration
@@ -67,7 +68,7 @@ contract DeployCoreScript is Utils {
         vm.serializeAddress(key, "NativeRouter", address(router));
         string memory output = vm.serializeAddress(key, "NativeRFQPool", address(rfqPool));
 
-        _writeDeployment(chainName, key, output);
+        vm.writeJson(output, string.concat(vm.projectRoot(), "/deployments/", chainName, "/", key, ".json"));
 
         vm.stopBroadcast();
     }
