@@ -28,7 +28,7 @@ contract CreditVaultTest is BaseTest {
         // Set deployer as epochUpdater and setup trader
         vm.startPrank(deployer);
         creditVault.setEpochUpdater(deployer);
-        creditVault.setTrader(halo, halo, halo, true);
+        creditVault.setTrader(halo, halo, halo, true, true);
         vm.stopPrank();
     }
 
@@ -417,47 +417,49 @@ contract CreditVaultTest is BaseTest {
         // Test 1: Non-owner cannot call setTrader
         vm.startPrank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
-        creditVault.setTrader(newTrader, newTrader, newTrader, true);
+        creditVault.setTrader(newTrader, newTrader, newTrader, true, true);
         vm.stopPrank();
 
         // Test 2: Cannot set zero address as trader or settler
         vm.startPrank(deployer);
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
-        creditVault.setTrader(address(0), newTrader, newTrader, true);
+        creditVault.setTrader(address(0), newTrader, newTrader, true, true);
 
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
-        creditVault.setTrader(newTrader, address(0), newTrader, true);
+        creditVault.setTrader(newTrader, address(0), newTrader, true, true);
 
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
-        creditVault.setTrader(newTrader, newTrader, address(0), true);
+        creditVault.setTrader(newTrader, newTrader, address(0), true, true);
 
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
-        creditVault.setTrader(address(0), address(0), address(0), true);
+        creditVault.setTrader(address(0), address(0), address(0), true, true);
         vm.stopPrank();
 
         // Test 3: Successfully enable trader and verify states
         vm.startPrank(deployer);
-        creditVault.setTrader(newTrader, newTrader, newTrader, true);
+        creditVault.setTrader(newTrader, newTrader, newTrader, true, true);
 
         // Verify states
         assertTrue(creditVault.traders(newTrader), "Trader should be enabled");
         assertEq(creditVault.traderToSettler(newTrader), newTrader, "Settler address should be set correctly");
         assertEq(creditVault.traderToRecipient(newTrader), newTrader, "Recipient address should be set correctly");
+        assertEq(creditVault.whitelistTraders(newTrader), true, "Whitelist trader should be set correctly");
         vm.stopPrank();
 
         // Test 4: Successfully disable trader and verify states
         vm.startPrank(deployer);
-        creditVault.setTrader(newTrader, newTrader, newTrader, false);
+        creditVault.setTrader(newTrader, newTrader, newTrader, false, false);
 
         // Verify states after disable
         assertFalse(creditVault.traders(newTrader), "Trader should be disabled");
         assertEq(creditVault.traderToSettler(newTrader), newTrader, "Settler address should remain unchanged");
         assertEq(creditVault.traderToRecipient(newTrader), newTrader, "Recipient address should remain unchanged");
+        assertEq(creditVault.whitelistTraders(newTrader), false, "Whitelist trader should be disabled");
         vm.stopPrank();
 
         // Test 5: Can re-enable disabled trader
         vm.startPrank(deployer);
-        creditVault.setTrader(newTrader, newTrader, newTrader, true);
+        creditVault.setTrader(newTrader, newTrader, newTrader, true, true);
 
         // Verify states after re-enable
         assertTrue(creditVault.traders(newTrader), "Trader should be re-enabled");
@@ -706,12 +708,11 @@ contract CreditVaultTest is BaseTest {
 
         // 2. Setup alice as trader and deployer as signer
         vm.startPrank(deployer);
-        creditVault.setTrader(alice, alice, bob, true);
+        creditVault.setTrader(alice, alice, bob, true, true);
         creditVault.setSigner(deployer); // Use deployer as the signer
         vm.stopPrank();
 
         // 3. Setup balances and approvals
-        // deal(address(USDC), alice, 3000e6); // alice needs USDC to transfer
         deal(address(weth), alice, 1 ether); // alice needs WETH to transfer
         deal(address(weth), bob, 0); // bob has no WETH
         deal(address(USDC), address(creditVault), 3000e6); // make sure credit vault have enough USDC
@@ -790,7 +791,7 @@ contract CreditVaultTest is BaseTest {
 
         // Record initial states
         uint256 initialVaultBalance = IERC20(lpUSDC).balanceOf(address(creditVault));
-        uint256 initialCollateral = creditVault.creditCollateral(alice, address(lpUSDC));
+        uint256 initialCollateral = creditVault.collateral(alice, address(lpUSDC));
 
         // Prepare token array
         ICreditVault.TokenAmountUint[] memory tokens = new ICreditVault.TokenAmountUint[](1);
@@ -809,7 +810,7 @@ contract CreditVaultTest is BaseTest {
 
         // Verify states after adding collateral
         assertEq(
-            creditVault.creditCollateral(alice, address(lpUSDC)),
+            creditVault.collateral(alice, address(lpUSDC)),
             initialCollateral + collateralAmount,
             "Collateral not added correctly"
         );
@@ -841,12 +842,8 @@ contract CreditVaultTest is BaseTest {
         vm.stopPrank();
 
         // Verify states for both tokens
-        assertEq(
-            creditVault.creditCollateral(alice, address(lpUSDC)), usdcAmount, "USDC collateral not added correctly"
-        );
-        assertEq(
-            creditVault.creditCollateral(alice, address(lpWETH)), wethAmount, "WETH collateral not added correctly"
-        );
+        assertEq(creditVault.collateral(alice, address(lpUSDC)), usdcAmount, "USDC collateral not added correctly");
+        assertEq(creditVault.collateral(alice, address(lpWETH)), wethAmount, "WETH collateral not added correctly");
     }
 
     function test_addCollateral_notLpToken() public {
@@ -898,7 +895,7 @@ contract CreditVaultTest is BaseTest {
         tokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: amount});
 
         // Record initial collateral for bob
-        uint256 initialBobCollateral = creditVault.creditCollateral(bob, address(lpUSDC));
+        uint256 initialBobCollateral = creditVault.collateral(bob, address(lpUSDC));
 
         // Alice adds collateral for Bob
         vm.startPrank(alice);
@@ -911,7 +908,7 @@ contract CreditVaultTest is BaseTest {
 
         // Verify Bob's collateral increased
         assertEq(
-            creditVault.creditCollateral(bob, address(lpUSDC)),
+            creditVault.collateral(bob, address(lpUSDC)),
             initialBobCollateral + amount,
             "Collateral not added correctly for other user"
         );
@@ -930,7 +927,7 @@ contract CreditVaultTest is BaseTest {
         vm.startPrank(deployer);
         lpUSDC.setMinDeposit(100);
         // Set alice as trader and settler
-        creditVault.setTrader(alice, alice, alice, true);
+        creditVault.setTrader(alice, alice, alice, true, true);
         vm.stopPrank();
 
         vm.startPrank(alice);
@@ -963,7 +960,7 @@ contract CreditVaultTest is BaseTest {
         bytes memory signature = abi.encodePacked(r, s, v);
 
         // Record initial states
-        uint256 initialCollateral = creditVault.creditCollateral(alice, address(lpUSDC));
+        uint256 initialCollateral = creditVault.collateral(alice, address(lpUSDC));
         uint256 initialBalance = lpUSDC.balanceOf(alice);
 
         // Execute remove collateral
@@ -973,7 +970,7 @@ contract CreditVaultTest is BaseTest {
 
         // Verify states after removal
         assertEq(
-            creditVault.creditCollateral(alice, address(lpUSDC)),
+            creditVault.collateral(alice, address(lpUSDC)),
             initialCollateral - amount / 2,
             "Collateral not reduced correctly"
         );
@@ -1024,7 +1021,7 @@ contract CreditVaultTest is BaseTest {
         creditVault.setNativePool(address(rfqPool), true);
         creditVault.setLiquidator(bob, bob, true);
         creditVault.setSigner(deployer);
-        creditVault.setTrader(alice, alice, bob, true);
+        creditVault.setTrader(alice, alice, bob, true, true);
         vm.stopPrank();
 
         // Simulate a trade: alice sells USDC to buy WETH
@@ -1095,7 +1092,7 @@ contract CreditVaultTest is BaseTest {
         }
 
         // 6. Record initial states
-        uint256 initialCollateral = creditVault.creditCollateral(alice, address(lpUSDC));
+        uint256 initialCollateral = creditVault.collateral(alice, address(lpUSDC));
         uint256 initialBalance = lpUSDC.balanceOf(bob);
         int256 initialUSDCPosition = creditVault.positions(alice, address(USDC));
         int256 initialWETHPosition = creditVault.positions(alice, address(weth));
@@ -1114,7 +1111,7 @@ contract CreditVaultTest is BaseTest {
         // 9. Verify states after liquidation
         // Check collateral changes
         assertEq(
-            creditVault.creditCollateral(alice, address(lpUSDC)),
+            creditVault.collateral(alice, address(lpUSDC)),
             initialCollateral - amount / 2,
             "Collateral not reduced correctly"
         );

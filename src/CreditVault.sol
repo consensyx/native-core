@@ -50,8 +50,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @notice  trader_address => underlying token => amount (positive for long, negative for short)
     mapping(address => mapping(address => int256)) public positions;
 
-    /// @notice traders' collateral trader_address => token => amount
-    mapping(address => mapping(address => uint256)) public creditCollateral;
+    /// @notice traders' collateral trader => token => amount
+    mapping(address => mapping(address => uint256)) public collateral;
 
     /// @dev If a LP token is supported
     mapping(address => bool) public supportedMarkets;
@@ -65,6 +65,9 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @notice maps trader to their recipient address
     /// @dev Address receives tokens from settlements and collateral operations
     mapping(address => address) public traderToRecipient;
+
+    /// @notice whitelist traders that can bypass the credit check
+    mapping(address => bool) public whitelistTraders;
 
     /// @notice whitelist for liquidators
     mapping(address => bool) public liquidators;
@@ -187,7 +190,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         _verifyRemoveCollateralSignature(request, signature);
 
         for (uint256 i; i < request.tokens.length; ++i) {
-            creditCollateral[request.trader][request.tokens[i].token] -= request.tokens[i].amount;
+            collateral[request.trader][request.tokens[i].token] -= request.tokens[i].amount;
         }
 
         address recipient = traderToRecipient[request.trader];
@@ -213,7 +216,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         address recipient = liquidatorToRecipient[msg.sender];
 
         for (uint256 i; i < request.claimCollaterals.length; ++i) {
-            creditCollateral[request.trader][request.claimCollaterals[i].token] -= request.claimCollaterals[i].amount;
+            collateral[request.trader][request.claimCollaterals[i].token] -= request.claimCollaterals[i].amount;
         }
 
         for (uint256 i; i < request.positionUpdates.length; ++i) {
@@ -262,7 +265,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
             require(supportedMarkets[token], ErrorsLib.OnlyLpToken());
 
             uint256 amount = tokens[i].amount;
-            creditCollateral[trader][token] += amount;
+            collateral[trader][token] += amount;
 
             IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         }
@@ -363,13 +366,21 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @param trader Address to configure trading permissions for
     /// @param settler Address authorized to settle positions on trader's behalf
     /// @param recipient Address authorized to receive tokens from settlements and collateral operations
-    /// @param status True to enable trading, false to revoke permissions
-    function setTrader(address trader, address settler, address recipient, bool status) external onlyOwner {
+    /// @param isTrader True to enable trading, false to revoke permissions
+    /// @param isWhitelistTrader True to enable whitelist which can bypass credit check
+    function setTrader(
+        address trader,
+        address settler,
+        address recipient,
+        bool isTrader,
+        bool isWhitelistTrader
+    ) external onlyOwner {
         require(trader != address(0) && settler != address(0) && recipient != address(0), ErrorsLib.ZeroAddress());
 
-        traders[trader] = status;
+        traders[trader] = isTrader;
         traderToSettler[trader] = settler;
         traderToRecipient[trader] = recipient;
+        whitelistTraders[trader] = isWhitelistTrader;
     }
 
     /// @notice Set or remove liquidator permissions
