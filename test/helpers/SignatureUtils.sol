@@ -96,7 +96,7 @@ library SignatureUtils {
 
     function generateSettleSignature(
         ICreditVault.SettlementRequest memory request,
-        address payout,
+        address recipient,
         address creditVault
     ) internal view returns (bytes32) {
         // keccak256("SettlementRequest(uint256 nonce,uint256 deadline,address trader,bytes32 positionUpdates,address recipient)")
@@ -109,7 +109,7 @@ library SignatureUtils {
                 request.deadline,
                 request.trader,
                 keccak256(abi.encode(request.positionUpdates)),
-                payout
+                recipient
             )
         );
 
@@ -118,7 +118,7 @@ library SignatureUtils {
 
     function generateRemoveCollateralSignature(
         ICreditVault.RemoveCollateralRequest memory request,
-        address payout,
+        address recipient,
         address creditVault
     ) internal view returns (bytes32) {
         // keccak256("RemoveCollateralRequest(uint256 nonce,uint256 deadline,address trader,bytes32 tokens,address recipient)")
@@ -132,7 +132,7 @@ library SignatureUtils {
                 request.deadline,
                 request.trader,
                 keccak256(abi.encode(request.tokens)),
-                payout
+                recipient
             )
         );
 
@@ -141,7 +141,7 @@ library SignatureUtils {
 
     function generateLiquidationSignature(
         ICreditVault.LiquidationRequest memory request,
-        address payout,
+        address recipient,
         address creditVault
     ) internal view returns (bytes32) {
         // keccak256("LiquidationRequest(uint256 nonce,uint256 deadline,address trader,bytes32 positionUpdates,bytes32 claimCollaterals,address recipient)")
@@ -155,7 +155,7 @@ library SignatureUtils {
                 request.trader,
                 keccak256(abi.encode(request.positionUpdates)),
                 keccak256(abi.encode(request.claimCollaterals)),
-                payout
+                recipient
             )
         );
 

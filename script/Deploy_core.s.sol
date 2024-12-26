@@ -51,7 +51,7 @@ contract DeployCoreScript is Script {
         // 5 Set credit vault configuration
         creditVault.setNativePool(address(rfqPool), true);
         creditVault.setSigner(deployer);
-        creditVault.setLiquidator(deployer, true);
+        creditVault.setLiquidator(deployer, deployer, true);
         creditVault.setEpochUpdater(deployer);
         creditVault.setFeeWithdrawer(payable(deployer));
 

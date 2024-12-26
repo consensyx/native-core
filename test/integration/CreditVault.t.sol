@@ -442,7 +442,7 @@ contract CreditVaultTest is BaseTest {
         // Verify states
         assertTrue(creditVault.traders(newTrader), "Trader should be enabled");
         assertEq(creditVault.traderToSettler(newTrader), newTrader, "Settler address should be set correctly");
-        assertEq(creditVault.traderToPayout(newTrader), newTrader, "Payout address should be set correctly");
+        assertEq(creditVault.traderToRecipient(newTrader), newTrader, "Recipient address should be set correctly");
         vm.stopPrank();
 
         // Test 4: Successfully disable trader and verify states
@@ -452,7 +452,7 @@ contract CreditVaultTest is BaseTest {
         // Verify states after disable
         assertFalse(creditVault.traders(newTrader), "Trader should be disabled");
         assertEq(creditVault.traderToSettler(newTrader), newTrader, "Settler address should remain unchanged");
-        assertEq(creditVault.traderToPayout(newTrader), newTrader, "Payout address should remain unchanged");
+        assertEq(creditVault.traderToRecipient(newTrader), newTrader, "Recipient address should remain unchanged");
         vm.stopPrank();
 
         // Test 5: Can re-enable disabled trader
@@ -462,7 +462,7 @@ contract CreditVaultTest is BaseTest {
         // Verify states after re-enable
         assertTrue(creditVault.traders(newTrader), "Trader should be re-enabled");
         assertEq(creditVault.traderToSettler(newTrader), newTrader, "Settler address should remain unchanged");
-        assertEq(creditVault.traderToPayout(newTrader), newTrader, "Payout address should remain unchanged");
+        assertEq(creditVault.traderToRecipient(newTrader), newTrader, "Recipient address should remain unchanged");
         vm.stopPrank();
     }
 
@@ -472,18 +472,18 @@ contract CreditVaultTest is BaseTest {
         // Test 1: Non-owner cannot call setLiquidator
         vm.startPrank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
-        creditVault.setLiquidator(newLiquidator, true);
+        creditVault.setLiquidator(newLiquidator, newLiquidator, true);
         vm.stopPrank();
 
         // Test 2: Cannot set zero address as liquidator
         vm.startPrank(deployer);
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
-        creditVault.setLiquidator(address(0), true);
+        creditVault.setLiquidator(address(0), address(0), true);
         vm.stopPrank();
 
         // Test 3: Successfully enable liquidator and verify state
         vm.startPrank(deployer);
-        creditVault.setLiquidator(newLiquidator, true);
+        creditVault.setLiquidator(newLiquidator, newLiquidator, true);
 
         // Verify state
         assertTrue(creditVault.liquidators(newLiquidator), "Liquidator should be enabled");
@@ -491,7 +491,7 @@ contract CreditVaultTest is BaseTest {
 
         // Test 4: Successfully disable liquidator and verify state
         vm.startPrank(deployer);
-        creditVault.setLiquidator(newLiquidator, false);
+        creditVault.setLiquidator(newLiquidator, newLiquidator, false);
 
         // Verify state after disable
         assertFalse(creditVault.liquidators(newLiquidator), "Liquidator should be disabled");
@@ -499,7 +499,7 @@ contract CreditVaultTest is BaseTest {
 
         // Test 5: Can re-enable disabled liquidator
         vm.startPrank(deployer);
-        creditVault.setLiquidator(newLiquidator, true);
+        creditVault.setLiquidator(newLiquidator, newLiquidator, true);
 
         // Verify state after re-enable
         assertTrue(creditVault.liquidators(newLiquidator), "Liquidator should be re-enabled");
@@ -1022,7 +1022,7 @@ contract CreditVaultTest is BaseTest {
         // 1. Setup native pool and create initial position via swapCallback
         vm.startPrank(deployer);
         creditVault.setNativePool(address(rfqPool), true);
-        creditVault.setLiquidator(bob, true);
+        creditVault.setLiquidator(bob, bob, true);
         creditVault.setSigner(deployer);
         creditVault.setTrader(alice, alice, bob, true);
         vm.stopPrank();
@@ -1088,7 +1088,7 @@ contract CreditVaultTest is BaseTest {
 
             // 5. Generate and sign liquidation request
             bytes32 digest = SignatureUtils.generateLiquidationSignature(
-                request, creditVault.traderToPayout(alice), address(creditVault)
+                request, creditVault.traderToRecipient(alice), address(creditVault)
             );
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
             signature = abi.encodePacked(r, s, v);
