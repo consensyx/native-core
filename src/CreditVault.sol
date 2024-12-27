@@ -376,6 +376,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         bool isWhitelistTrader
     ) external onlyOwner {
         require(trader != address(0) && settler != address(0) && recipient != address(0), ErrorsLib.ZeroAddress());
+        // Prevent trader, settler and recipient from being compromised simultaneously
+        require(recipient != trader && recipient != settler, ErrorsLib.TraderRecipientConflict());
 
         traders[trader] = isTrader;
         traderToSettler[trader] = settler;

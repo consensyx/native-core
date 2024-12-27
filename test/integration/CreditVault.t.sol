@@ -24,12 +24,6 @@ contract CreditVaultTest is BaseTest {
 
         // Setup PMM traders including halo
         setupPMM();
-
-        // Set deployer as epochUpdater and setup trader
-        vm.startPrank(deployer);
-        creditVault.setEpochUpdater(deployer);
-        creditVault.setTrader(halo, halo, halo, true, true);
-        vm.stopPrank();
     }
 
     function test_epochUpdate_onlyEpochUpdater() public {
@@ -413,20 +407,21 @@ contract CreditVaultTest is BaseTest {
 
     function test_setTrader() public {
         address newTrader = makeAddr("newTrader");
+        address newTraderRecipient = makeAddr("newTraderRecipient");
 
         // Test 1: Non-owner cannot call setTrader
         vm.startPrank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
-        creditVault.setTrader(newTrader, newTrader, newTrader, true, true);
+        creditVault.setTrader(newTrader, newTrader, newTraderRecipient, true, true);
         vm.stopPrank();
 
         // Test 2: Cannot set zero address as trader or settler
         vm.startPrank(deployer);
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
-        creditVault.setTrader(address(0), newTrader, newTrader, true, true);
+        creditVault.setTrader(address(0), newTrader, newTraderRecipient, true, true);
 
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
-        creditVault.setTrader(newTrader, address(0), newTrader, true, true);
+        creditVault.setTrader(newTrader, address(0), newTraderRecipient, true, true);
 
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
         creditVault.setTrader(newTrader, newTrader, address(0), true, true);
@@ -437,34 +432,40 @@ contract CreditVaultTest is BaseTest {
 
         // Test 3: Successfully enable trader and verify states
         vm.startPrank(deployer);
-        creditVault.setTrader(newTrader, newTrader, newTrader, true, true);
+        creditVault.setTrader(newTrader, newTrader, newTraderRecipient, true, true);
 
         // Verify states
         assertTrue(creditVault.traders(newTrader), "Trader should be enabled");
         assertEq(creditVault.traderToSettler(newTrader), newTrader, "Settler address should be set correctly");
-        assertEq(creditVault.traderToRecipient(newTrader), newTrader, "Recipient address should be set correctly");
+        assertEq(
+            creditVault.traderToRecipient(newTrader), newTraderRecipient, "Recipient address should be set correctly"
+        );
         assertEq(creditVault.whitelistTraders(newTrader), true, "Whitelist trader should be set correctly");
         vm.stopPrank();
 
         // Test 4: Successfully disable trader and verify states
         vm.startPrank(deployer);
-        creditVault.setTrader(newTrader, newTrader, newTrader, false, false);
+        creditVault.setTrader(newTrader, newTrader, newTraderRecipient, false, false);
 
         // Verify states after disable
         assertFalse(creditVault.traders(newTrader), "Trader should be disabled");
         assertEq(creditVault.traderToSettler(newTrader), newTrader, "Settler address should remain unchanged");
-        assertEq(creditVault.traderToRecipient(newTrader), newTrader, "Recipient address should remain unchanged");
+        assertEq(
+            creditVault.traderToRecipient(newTrader), newTraderRecipient, "Recipient address should remain unchanged"
+        );
         assertEq(creditVault.whitelistTraders(newTrader), false, "Whitelist trader should be disabled");
         vm.stopPrank();
 
         // Test 5: Can re-enable disabled trader
         vm.startPrank(deployer);
-        creditVault.setTrader(newTrader, newTrader, newTrader, true, true);
+        creditVault.setTrader(newTrader, newTrader, newTraderRecipient, true, true);
 
         // Verify states after re-enable
         assertTrue(creditVault.traders(newTrader), "Trader should be re-enabled");
         assertEq(creditVault.traderToSettler(newTrader), newTrader, "Settler address should remain unchanged");
-        assertEq(creditVault.traderToRecipient(newTrader), newTrader, "Recipient address should remain unchanged");
+        assertEq(
+            creditVault.traderToRecipient(newTrader), newTraderRecipient, "Recipient address should remain unchanged"
+        );
         vm.stopPrank();
     }
 
@@ -915,6 +916,7 @@ contract CreditVaultTest is BaseTest {
     }
 
     function test_removeCollateral() public {
+        address aliceRecipient = makeAddr("aliceRecipient");
         // Setup: First add some collateral
         uint256 amount = 1000e6;
 
@@ -927,7 +929,7 @@ contract CreditVaultTest is BaseTest {
         vm.startPrank(deployer);
         lpUSDC.setMinDeposit(100);
         // Set alice as trader and settler
-        creditVault.setTrader(alice, alice, alice, true, true);
+        creditVault.setTrader(alice, alice, aliceRecipient, true, true);
         vm.stopPrank();
 
         vm.startPrank(alice);
@@ -955,13 +957,13 @@ contract CreditVaultTest is BaseTest {
         });
 
         // Generate signature
-        bytes32 digest = SignatureUtils.generateRemoveCollateralSignature(request, alice, address(creditVault));
+        bytes32 digest = SignatureUtils.generateRemoveCollateralSignature(request, aliceRecipient, address(creditVault));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
         bytes memory signature = abi.encodePacked(r, s, v);
 
         // Record initial states
         uint256 initialCollateral = creditVault.collateral(alice, address(lpUSDC));
-        uint256 initialBalance = lpUSDC.balanceOf(alice);
+        // uint256 initialBalance = lpUSDC.balanceOf(alice);
 
         // Execute remove collateral
         vm.startPrank(alice);
@@ -974,7 +976,8 @@ contract CreditVaultTest is BaseTest {
             initialCollateral - amount / 2,
             "Collateral not reduced correctly"
         );
-        assertEq(lpUSDC.balanceOf(alice), initialBalance + amount / 2, "LP tokens not returned correctly");
+        // assertEq(lpUSDC.balanceOf(alice), initialBalance + amount / 2, "LP tokens not returned correctly");
+        assertEq(lpUSDC.balanceOf(aliceRecipient), amount / 2, "LP tokens not returned correctly");
 
         request = ICreditVault.RemoveCollateralRequest({
             nonce: 1,

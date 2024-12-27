@@ -143,6 +143,9 @@ library ErrorsLib {
     /// @notice Thrown when trading is paused
     error TradePaused();
 
+    /// @notice Thrown when trader, settler and recipient are the same
+    error TraderRecipientConflict();
+
     /// @notice Thrown when transfer to self is attempted
     error TransferSelf();
 
