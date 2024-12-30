@@ -125,7 +125,7 @@ contract BaseTest is Test {
         // Setup CreditVault permissions and configurations
         creditVault.setNativePool(address(rfqPool), true);
         creditVault.setSigner(deployer);
-        creditVault.setLiquidator(deployer, deployer, true);
+        creditVault.setLiquidator(deployer, makeAddr("liquidatorRecipient"), true);
 
         creditVault.setEpochUpdater(deployer);
         creditVault.setFeeWithdrawer(payable(deployer));

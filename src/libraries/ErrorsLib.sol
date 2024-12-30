@@ -77,6 +77,9 @@ library ErrorsLib {
     /// @notice Thrown when widget fee rate is invalid
     error InvalidWidgetFeeRate();
 
+    /// @notice Thrown when liquidator and recipient are the same
+    error LiquidatorRecipientConflict();
+
     /// @notice Thrown when nonce is used
     error NonceUsed();
 

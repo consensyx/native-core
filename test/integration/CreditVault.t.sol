@@ -471,11 +471,12 @@ contract CreditVaultTest is BaseTest {
 
     function test_setLiquidator() public {
         address newLiquidator = makeAddr("newLiquidator");
+        address newLiquidatorRecipient = makeAddr("newLiquidatorRecipient");
 
         // Test 1: Non-owner cannot call setLiquidator
         vm.startPrank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
-        creditVault.setLiquidator(newLiquidator, newLiquidator, true);
+        creditVault.setLiquidator(newLiquidator, newLiquidatorRecipient, true);
         vm.stopPrank();
 
         // Test 2: Cannot set zero address as liquidator
@@ -486,15 +487,25 @@ contract CreditVaultTest is BaseTest {
 
         // Test 3: Successfully enable liquidator and verify state
         vm.startPrank(deployer);
-        creditVault.setLiquidator(newLiquidator, newLiquidator, true);
+        creditVault.setLiquidator(newLiquidator, newLiquidatorRecipient, true);
 
         // Verify state
         assertTrue(creditVault.liquidators(newLiquidator), "Liquidator should be enabled");
+        assertEq(
+            creditVault.liquidatorToRecipient(newLiquidator),
+            newLiquidatorRecipient,
+            "Liquidator recipient should be set correctly"
+        );
         vm.stopPrank();
 
         // Test 4: Successfully disable liquidator and verify state
         vm.startPrank(deployer);
-        creditVault.setLiquidator(newLiquidator, newLiquidator, false);
+        creditVault.setLiquidator(newLiquidator, newLiquidatorRecipient, false);
+        assertEq(
+            creditVault.liquidatorToRecipient(newLiquidator),
+            newLiquidatorRecipient,
+            "Liquidator recipient should be set correctly"
+        );
 
         // Verify state after disable
         assertFalse(creditVault.liquidators(newLiquidator), "Liquidator should be disabled");
@@ -502,7 +513,7 @@ contract CreditVaultTest is BaseTest {
 
         // Test 5: Can re-enable disabled liquidator
         vm.startPrank(deployer);
-        creditVault.setLiquidator(newLiquidator, newLiquidator, true);
+        creditVault.setLiquidator(newLiquidator, newLiquidatorRecipient, true);
 
         // Verify state after re-enable
         assertTrue(creditVault.liquidators(newLiquidator), "Liquidator should be re-enabled");
@@ -1018,11 +1029,12 @@ contract CreditVaultTest is BaseTest {
 
     function test_liquidate_success() public {
         uint256 amount = 1000e6;
+        address bobRecipient = makeAddr("bobRecipient");
 
         // 1. Setup native pool and create initial position via swapCallback
         vm.startPrank(deployer);
         creditVault.setNativePool(address(rfqPool), true);
-        creditVault.setLiquidator(bob, bob, true);
+        creditVault.setLiquidator(bob, bobRecipient, true);
         creditVault.setSigner(deployer);
         creditVault.setTrader(alice, alice, bob, true, true);
         vm.stopPrank();
@@ -1096,7 +1108,7 @@ contract CreditVaultTest is BaseTest {
 
         // 6. Record initial states
         uint256 initialCollateral = creditVault.collateral(alice, address(lpUSDC));
-        uint256 initialBalance = lpUSDC.balanceOf(bob);
+        uint256 bobInitialBalance = lpUSDC.balanceOf(bobRecipient);
         int256 initialUSDCPosition = creditVault.positions(alice, address(USDC));
         int256 initialWETHPosition = creditVault.positions(alice, address(weth));
 
@@ -1118,7 +1130,7 @@ contract CreditVaultTest is BaseTest {
             initialCollateral - amount / 2,
             "Collateral not reduced correctly"
         );
-        assertEq(lpUSDC.balanceOf(bob), initialBalance + amount / 2, "LP tokens not transferred correctly");
+        assertEq(lpUSDC.balanceOf(bobRecipient), bobInitialBalance + amount / 2, "LP tokens not transferred correctly");
 
         // Check position changes
         assertEq(

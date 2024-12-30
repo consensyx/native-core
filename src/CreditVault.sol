@@ -26,7 +26,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @notice Address that can withdraw protocol fees
     address payable public feeWithdrawer;
 
-    /// @notice signer for permissioned functions: liquidate, settle, etc.
+    /// @notice signer for permissioned functions: liquidate, settle, removeCollateral, etc.
     address public signer;
 
     /// @notice epoch updater address
@@ -180,7 +180,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     }
 
     /// @notice Called by traders to remove collateral
-    /// @dev This transaction requires off-chain calculation to verify if the trader's credit meets the criteria. See comments for the calculation logic.
+    /// @dev This transaction requires off-chain calculation to verify if the trader's credit meets the criteria.
     /// @param request The struct of the remove collateral request containing info of collateral to remove
     /// @param signature The signature of the remove collateral request
     function removeCollateral(
@@ -205,7 +205,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     }
 
     /// @notice Called by liquidators to liquidate the underwater positions
-    /// @dev This transaction requires off-chain calculation to verify if the trader's credit meets the criteria. See comments for the calculation logic.
+    /// @dev This transaction requires off-chain calculation to verify if the trader's credit meets the criteria.
     /// @param request The struct of the liquidation request containing info of long and short positions to liquidate
     /// @param signature The signature of the liquidation request
     function liquidate(LiquidationRequest calldata request, bytes calldata signature) external onlyLiquidator {
@@ -376,7 +376,6 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         bool isWhitelistTrader
     ) external onlyOwner {
         require(trader != address(0) && settler != address(0) && recipient != address(0), ErrorsLib.ZeroAddress());
-        // Prevent trader, settler and recipient from being compromised simultaneously
         require(recipient != trader && recipient != settler, ErrorsLib.TraderRecipientConflict());
 
         traders[trader] = isTrader;
@@ -392,6 +391,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @param status True to whitelist, false to remove from whitelist
     function setLiquidator(address liquidator, address recipient, bool status) external onlyOwner {
         require(liquidator != address(0) && recipient != address(0), ErrorsLib.ZeroAddress());
+        require(liquidator != recipient, ErrorsLib.LiquidatorRecipientConflict());
 
         liquidators[liquidator] = status;
         liquidatorToRecipient[liquidator] = recipient;
