@@ -20,11 +20,6 @@ interface INativeRouter is IQuote {
         bytes calldata swapperSig
     ) external;
 
-    /// @notice Withdraw accumulated widget fees for multiple tokens
-    /// @param tokens Array of token addresses to withdraw fees from
-    /// @param recipient Address to receive the withdrawn fees
-    function withdrawWidgetFees(address[] calldata tokens, address recipient) external;
-
     /// @notice Emitted when ETH is refunded
     event RefundETH(address recipient, uint256 amount);
 

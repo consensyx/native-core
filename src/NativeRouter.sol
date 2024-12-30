@@ -45,10 +45,6 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @dev Mapping to track which external routers are whitelisted for swaps
     mapping(address => bool) public whitelistRouter;
 
-    /// @dev Accumulated widget fees per token address
-    /// @notice The widgetFee is charged via the fillOrder, not include the widgetFee for tradeRFQ.
-    mapping(address => uint256) public permitWidgetFee;
-
     /*//////////////////////////////////////////////////////////////////////////
                                      RECEIVE FUNCTION
     //////////////////////////////////////////////////////////////////////////*/
@@ -167,8 +163,8 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
 
         if (widgetFee > 0) {
             quote.effectiveAmountIn -= widgetFee;
-            // Accumulate widget fee for withdrawal
-            permitWidgetFee[quote.tokenIn] += widgetFee;
+            // Transfer widget fee to fee recipient
+            IERC20(quote.tokenIn).safeTransfer(quote.widgetFee.feeRecipient, widgetFee);
         }
 
         // Transfer tokens to market maker's treasury
@@ -184,22 +180,6 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /*//////////////////////////////////////////////////////////////////////////
                                      ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
-
-    /// @notice Withdraw accumulated widget fees for multiple tokens
-    /// @param tokens Array of token addresses to withdraw fees from
-    /// @param recipient Address to receive the withdrawn fees
-    function withdrawWidgetFees(address[] calldata tokens, address recipient) external onlyOwner nonReentrant {
-        require(recipient != address(0), ErrorsLib.ZeroAddress());
-
-        for (uint256 i = 0; i < tokens.length; ++i) {
-            address token = tokens[i];
-
-            IERC20(token).safeTransfer(recipient, permitWidgetFee[token]);
-            permitWidgetFee[token] = 0;
-
-            emit WidgetFeesWithdrawn(recipient, token, permitWidgetFee[token]);
-        }
-    }
 
     /// @notice Emergency function to refund stuck ETH from the contract
     /// @dev Can only be called by contract owner in emergency situations
@@ -217,7 +197,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @param amount The amount of tokens to refund
     function refundERC20(address token, address recipient, uint256 amount) public payable onlyOwner nonReentrant {
         // Note: We need to subtract the widget fee from the balance of the token in the contract
-        amount = Math.min(IERC20(token).balanceOf(address(this)) - permitWidgetFee[token], amount);
+        amount = Math.min(IERC20(token).balanceOf(address(this)), amount);
 
         TransferHelper.safeTransfer(token, recipient, amount);
 
