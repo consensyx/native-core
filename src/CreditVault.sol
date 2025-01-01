@@ -78,6 +78,9 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @notice Mapping of authorized isNativePools this vault is serving as treasury to
     mapping(address => bool) public isNativePools;
 
+    /// @notice Tracks rebalance caps for each trader/liquidator and token
+    mapping(address => mapping(address => RebalanceCap)) public rebalanceCaps;
+
     /*//////////////////////////////////////////////////////////////////////////
                                      CONSTRUCTOR
     //////////////////////////////////////////////////////////////////////////*/
@@ -164,6 +167,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         _updatePositions(request.positionUpdates, request.trader);
 
         address recipient = traderToRecipient[request.trader];
+
         // execute token transfers
         for (uint256 i; i < request.positionUpdates.length; ++i) {
             address token = request.positionUpdates[i].token;
@@ -172,6 +176,9 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
             if (amount > 0) {
                 IERC20(token).safeTransferFrom(msg.sender, address(this), amount.toUint256());
             } else {
+                /// Enforce rebalance cap before funds leave vault to ensure limit compliance
+                _updateRebalanceCap(request.trader, token, (-amount).toUint256());
+
                 IERC20(token).safeTransfer(recipient, (-amount).toUint256());
             }
         }
@@ -197,6 +204,9 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         for (uint256 i; i < request.tokens.length; ++i) {
             address token = request.tokens[i].token;
             uint256 amount = request.tokens[i].amount;
+
+            /// Enforce rebalance cap before funds leave vault
+            _updateRebalanceCap(request.trader, token, amount);
 
             IERC20(token).safeTransfer(recipient, amount);
         }
@@ -226,12 +236,19 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
             if (amount > 0) {
                 IERC20(token).safeTransferFrom(msg.sender, address(this), amount.toUint256());
             } else {
+                /// Enforce rebalance cap before underlying token leave vault
+                _updateRebalanceCap(request.trader, token, (-amount).toUint256());
+
                 IERC20(token).safeTransfer(recipient, (-amount).toUint256());
             }
         }
 
         for (uint256 i; i < request.claimCollaterals.length; ++i) {
             address token = request.claimCollaterals[i].token;
+
+            /// Enforce rebalance cap before collateral token leave vault
+            _updateRebalanceCap(request.trader, token, request.claimCollaterals[i].amount);
+
             IERC20(token).safeTransfer(recipient, request.claimCollaterals[i].amount);
         }
 
@@ -361,6 +378,21 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         }
     }
 
+    /// @notice Set or update the daily rebalance limit for a specific trader or liquidator and token
+    /// @dev A limit of 0 means unlimited rebalancing is allowed
+    /// @param operator The address of the trader or liquidator whose limit is being set
+    /// @param token The token address for which the limit applies
+    /// @param limit The maximum amount of tokens that can be rebalanced per day (0 for unlimited)
+    function setRebalanceCap(address operator, address token, uint256 limit) external onlyOwner {
+        require(token != address(0), ErrorsLib.ZeroAddress());
+        require(traders[operator] || liquidators[operator], ErrorsLib.NotTraderOrLiquidator());
+
+        // used will be reset to 0
+        rebalanceCaps[operator][token] = RebalanceCap({limit: limit, used: 0, lastDay: block.timestamp / 86_400});
+
+        emit RebalanceCapUpdated(operator, token, limit);
+    }
+
     /// @notice Manages trader permissions and settlement addresses
     /// @dev Only callable by owner
     /// @param trader Address to configure trading permissions for
@@ -381,7 +413,10 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         traders[trader] = isTrader;
         traderToSettler[trader] = settler;
         traderToRecipient[trader] = recipient;
+
         whitelistTraders[trader] = isWhitelistTrader;
+
+        emit TraderSet(trader, isTrader, isWhitelistTrader, settler, recipient);
     }
 
     /// @notice Set or remove liquidator permissions
@@ -450,15 +485,38 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         for (uint256 i; i < updatesLength; ++i) {
             address token = positionUpdates[i].token;
             int256 amount = positionUpdates[i].amount;
-            int256 newPositionValue = positions[trader][token] + amount;
+            int256 newPosition = positions[trader][token] + amount;
 
             // Position must decrease without flipping its sign (e.g. long 100 -> long 50, not long 100 -> short 20)
-            if (positions[trader][token] * amount >= 0 || positions[trader][token] * newPositionValue < 0) {
+            if (positions[trader][token] * amount >= 0 || positions[trader][token] * newPosition < 0) {
                 revert ErrorsLib.InvalidPositionUpdateAmount();
             }
 
-            positions[trader][token] = newPositionValue;
+            positions[trader][token] = newPosition;
         }
+    }
+
+    /// @notice Check and update daily rebalance tracking for a trader's token position
+    /// @param trader The address of the trader attempting to rebalance
+    /// @param token The token address being rebalanced, can be underlying token or collateral token
+    /// @param amount The amount of tokens being rebalanced
+    function _updateRebalanceCap(address trader, address token, uint256 amount) internal {
+        RebalanceCap storage cap = rebalanceCaps[trader][token];
+        uint256 currentDay = block.timestamp / 86_400;
+        uint256 newUsed;
+
+        // Reset daily used amount if it's a new day, otherwise add to existing
+        if (currentDay > cap.lastDay) {
+            newUsed = amount;
+        } else {
+            newUsed = cap.used + amount;
+        }
+
+        // Check if rebalance would exceed daily limit, skip check if limit is 0 (unlimited)
+        require(cap.limit == 0 || newUsed <= cap.limit, ErrorsLib.RebalanceLimitExceeded());
+
+        // Update storage in a single write
+        rebalanceCaps[trader][token] = RebalanceCap({limit: cap.limit, used: newUsed, lastDay: currentDay});
     }
 
     function _verifySettleSignature(

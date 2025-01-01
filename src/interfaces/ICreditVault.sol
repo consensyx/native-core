@@ -10,6 +10,16 @@ interface ICreditVault {
         int256 amount1Delta
     ) external;
 
+    /// @notice Struct for tracking daily rebalance limits per trader/liquidator and token
+    /// @param limit Daily rebalance limit
+    /// @param used Amount rebalanced today
+    /// @param lastDay Last rebalance day timestamp
+    struct RebalanceCap {
+        uint256 limit;
+        uint256 used;
+        uint256 lastDay;
+    }
+
     /// @notice Epoch Funding fee updates for a specific trader
     /// @param trader The address of the trader
     /// @param feeUpdates Array of funding fee updates for different tokens
@@ -123,6 +133,21 @@ interface ICreditVault {
     /// @param pool The address of the native pool
     /// @param isActive The new status of the pool
     event NativePoolUpdated(address indexed pool, bool isActive);
+
+    /// @notice Emitted when a trader or liquidator's rebalance limit is updated for a token
+    /// @param operator The trader or liquidator address
+    /// @param token The token address
+    /// @param limit The new daily limit (0 means unlimited)
+    event RebalanceCapUpdated(address indexed operator, address indexed token, uint256 limit);
+
+    /// @notice Emitted when a trader's info is updated
+    /// @param trader The address of the trader whose info is being updated
+    /// @param isTrader Whether the address is enabled for trading
+    /// @param isWhitelistTrader Whether the trader can bypass credit checks
+    /// @param settler The address authorized to settle positions for this trader
+    /// @param recipient The address authorized to receive tokens from settlements
+
+    event TraderSet(address indexed trader, bool isTrader, bool isWhitelistTrader, address settler, address recipient);
 
     /// @notice Emitted when liquidator is set
     event LiquidatorSet(address liquidator, bool status);

@@ -812,12 +812,7 @@ contract CreditVaultTest is BaseTest {
         // Approve and add collateral
         vm.startPrank(alice);
         IERC20(lpUSDC).approve(address(creditVault), collateralAmount);
-        console2.log(uint256(111));
-        console2.log(uint256(collateralAmount));
-        // console2.log(address(lpUSDC));
-        // console2.log(address(USDC));
         creditVault.addCollateral(tokens, alice);
-        console2.log(uint256(222));
         vm.stopPrank();
 
         // Verify states after adding collateral
@@ -911,11 +906,7 @@ contract CreditVaultTest is BaseTest {
 
         // Alice adds collateral for Bob
         vm.startPrank(alice);
-        try creditVault.addCollateral(tokens, bob) {
-            console2.log("addCollateral succeeded");
-        } catch Error(string memory reason) {
-            console2.log("addCollateral failed with reason:", reason);
-        }
+        creditVault.addCollateral(tokens, bob);
         vm.stopPrank();
 
         // Verify Bob's collateral increased
@@ -1272,5 +1263,147 @@ contract CreditVaultTest is BaseTest {
             vaultInitialBalance - amount,
             "Vault balance should decrease by transfer amount"
         );
+    }
+
+    function test_rebalanceCap() public {
+        address aliceRecipient = makeAddr("aliceRecipient");
+
+        // Setup: Add collateral first
+        uint256 amount = 10_000e6; // 10000 USDC
+        deal(address(USDC), alice, amount);
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), amount);
+        vm.stopPrank();
+
+        vm.startPrank(deployer);
+        lpUSDC.setMinDeposit(100);
+        creditVault.setTrader(alice, alice, aliceRecipient, true, true);
+        vm.stopPrank();
+
+        vm.startPrank(alice);
+        lpUSDC.deposit(amount);
+        lpUSDC.approve(address(creditVault), amount);
+
+        // Add collateral
+        ICreditVault.TokenAmountUint[] memory addTokens = new ICreditVault.TokenAmountUint[](1);
+        addTokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: amount});
+        creditVault.addCollateral(addTokens, alice);
+        vm.stopPrank();
+
+        // Test 1: Set daily limit and try to exceed it
+        vm.prank(deployer);
+        creditVault.setRebalanceCap(alice, address(lpUSDC), 3000e6); // Set cap for lpUSDC
+
+        ICreditVault.RebalanceCap memory cap = _getRebalanceCap(alice, address(lpUSDC));
+        assertEq(cap.limit, 3000e6, "Limit should be 3000e6");
+        assertEq(cap.used, 0, "Used should be 0");
+        assertEq(cap.lastDay, block.timestamp / 86_400, "Last day should be current day");
+
+        ICreditVault.TokenAmountUint[] memory removeTokens = new ICreditVault.TokenAmountUint[](1);
+        removeTokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: 4000e6});
+
+        ICreditVault.RemoveCollateralRequest memory request = ICreditVault.RemoveCollateralRequest({
+            nonce: 0,
+            deadline: block.timestamp + 3600,
+            trader: alice,
+            tokens: removeTokens
+        });
+
+        bytes32 digest = SignatureUtils.generateRemoveCollateralSignature(request, aliceRecipient, address(creditVault));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // Should fail due to exceeding daily limit
+        vm.prank(alice);
+        vm.expectRevert(ErrorsLib.RebalanceLimitExceeded.selector);
+        creditVault.removeCollateral(request, signature);
+
+        // Test 2: Multiple operations within limit
+        removeTokens[0].amount = 1000e6; // Reduce to 1000 USDC
+        request.nonce = 1;
+        digest = SignatureUtils.generateRemoveCollateralSignature(request, aliceRecipient, address(creditVault));
+        (v, r, s) = vm.sign(deployerKey, digest);
+        signature = abi.encodePacked(r, s, v);
+
+        // First removal should succeed
+        vm.prank(alice);
+        creditVault.removeCollateral(request, signature);
+
+        cap = _getRebalanceCap(alice, address(lpUSDC));
+        assertEq(cap.used, 1000e6, "Used should be 1000e6");
+        assertEq(cap.limit, 3000e6, "Limit should be 3000e6");
+        assertEq(cap.lastDay, block.timestamp / 86_400, "Last day should be current day");
+
+        // Second removal with same amount
+        request.nonce = 2;
+        digest = SignatureUtils.generateRemoveCollateralSignature(request, aliceRecipient, address(creditVault));
+        (v, r, s) = vm.sign(deployerKey, digest);
+        signature = abi.encodePacked(r, s, v);
+
+        vm.prank(alice);
+        creditVault.removeCollateral(request, signature);
+
+        cap = _getRebalanceCap(alice, address(lpUSDC));
+        assertEq(cap.used, 2000e6, "Used should be 2000e6");
+        assertEq(cap.limit, 3000e6, "Limit should be 3000e6");
+        assertEq(cap.lastDay, block.timestamp / 86_400, "Last day should be current day");
+
+        // Third removal should fail as it would exceed daily limit
+        removeTokens[0].amount = 2000e6;
+        request.nonce = 3;
+        digest = SignatureUtils.generateRemoveCollateralSignature(request, aliceRecipient, address(creditVault));
+        (v, r, s) = vm.sign(deployerKey, digest);
+        signature = abi.encodePacked(r, s, v);
+
+        vm.prank(alice);
+        vm.expectRevert(ErrorsLib.RebalanceLimitExceeded.selector);
+        creditVault.removeCollateral(request, signature);
+
+        // Test 3: Reset on new day
+        vm.warp(block.timestamp + 86_400); // Move to next day
+
+        request.nonce = 4;
+        removeTokens[0].amount = 3000e6;
+        request.deadline = block.timestamp + 3600;
+        digest = SignatureUtils.generateRemoveCollateralSignature(request, aliceRecipient, address(creditVault));
+        (v, r, s) = vm.sign(deployerKey, digest);
+        signature = abi.encodePacked(r, s, v);
+
+        // Should succeed as cap resets on new day
+        vm.prank(alice);
+        creditVault.removeCollateral(request, signature);
+
+        cap = _getRebalanceCap(alice, address(lpUSDC));
+        assertEq(cap.used, 3000e6, "Used should be 3000e6");
+        assertEq(cap.limit, 3000e6, "Limit should be 3000e6");
+        assertEq(cap.lastDay, block.timestamp / 86_400, "Last day should be current day");
+
+        // Test 4: Unlimited cap (limit = 0)
+        vm.prank(deployer);
+        creditVault.setRebalanceCap(alice, address(lpUSDC), 0); // Set unlimited cap
+        cap = _getRebalanceCap(alice, address(lpUSDC));
+        assertEq(cap.used, 0, "Used should be 0");
+        assertEq(cap.limit, 0, "Limit should be unlimited");
+        assertEq(cap.lastDay, block.timestamp / 86_400, "Last day should be current day");
+
+        request.nonce = 5;
+        removeTokens[0].amount = 5000e6;
+        digest = SignatureUtils.generateRemoveCollateralSignature(request, aliceRecipient, address(creditVault));
+        (v, r, s) = vm.sign(deployerKey, digest);
+        signature = abi.encodePacked(r, s, v);
+
+        // Should succeed as cap resets on new day
+        vm.prank(alice);
+        creditVault.removeCollateral(request, signature);
+
+        cap = _getRebalanceCap(alice, address(lpUSDC));
+        assertEq(cap.used, 5000e6, "Used should be 5000e6");
+        assertEq(cap.limit, 0, "Limit should be unlimited");
+        assertEq(cap.lastDay, block.timestamp / 86_400, "Last day should be current day");
+    }
+
+    function _getRebalanceCap(address trader, address token) public view returns (ICreditVault.RebalanceCap memory) {
+        (uint256 limit, uint256 used, uint256 lastDay) = creditVault.rebalanceCaps(trader, token);
+        return ICreditVault.RebalanceCap({limit: limit, used: used, lastDay: lastDay});
     }
 }

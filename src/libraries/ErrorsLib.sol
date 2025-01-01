@@ -38,9 +38,6 @@ library ErrorsLib {
     /// @notice Thrown when LP token shares are insufficient
     error InsufficientShares();
 
-    /// @notice Thrown when token amount is insufficient for operation
-    error InsufficientTokenAmount();
-
     /// @notice Thrown when LP token underlying is insufficient
     error InsufficientUnderlying();
 
@@ -49,9 +46,6 @@ library ErrorsLib {
 
     /// @notice Thrown when fee rate in basis points exceeds maximum (10000)
     error InvalidFeeBips();
-
-    /// @notice Thrown when credit would be invalid after operation
-    error InvalidCreditAfterOperation();
 
     /// @notice Thrown when LP token address is invalid
     error InvalidLPToken();
@@ -91,6 +85,9 @@ library ErrorsLib {
 
     /// @notice Thrown when insufficient token output received
     error NotEnoughTokenReceived();
+
+    /// @notice Thrown the address is not a trader or liquidator
+    error NotTraderOrLiquidator();
 
     /// @notice Thrown when caller is not the credit vault
     error OnlyCreditVault();
@@ -136,6 +133,9 @@ library ErrorsLib {
 
     /// @notice Thrown when quote has expired
     error QuoteExpired();
+
+    /// @notice Thrown when rebalance limit is exceeded
+    error RebalanceLimitExceeded();
 
     /// @notice Thrown when request has expired
     error RequestExpired();
