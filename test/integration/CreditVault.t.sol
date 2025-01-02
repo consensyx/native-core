@@ -1112,7 +1112,7 @@ contract CreditVaultTest is BaseTest {
 
             // 5. Generate and sign liquidation request
             bytes32 digest = SignatureUtils.generateLiquidationSignature(
-                request, creditVault.traderToRecipient(alice), address(creditVault)
+                request, creditVault.liquidatorToRecipient(bob), address(creditVault)
             );
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
             signature = abi.encodePacked(r, s, v);

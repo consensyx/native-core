@@ -24,7 +24,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Address that can withdraw protocol fees
-    address payable public feeWithdrawer;
+    address public feeWithdrawer;
 
     /// @notice signer for permissioned functions: liquidate, settle, removeCollateral, etc.
     address public signer;
@@ -90,10 +90,10 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @notice Callback function called by NativeRFQPool after swap execution to update trader positions
     /// @dev Only callable by whitelisted NativePools, it's called after the swap is executed
     /// @param trader The address of the market maker
-    /// @param tokenIn The address of the token that the swapper is selling
-    /// @param amountIn The amount of the token that the swapper is selling
-    /// @param tokenOut The address of the token that the swapper is buying
-    /// @param amountOut The amount of the token that the swapper is buying
+    /// @param tokenIn The address of the token that is selling
+    /// @param amountIn The amount of the token that is selling
+    /// @param tokenOut The address of the token that is buying
+    /// @param amountOut The amount of the token that is buying
     function swapCallback(
         address trader,
         address tokenIn,
@@ -585,7 +585,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
                 request.trader,
                 keccak256(abi.encode(request.positionUpdates)),
                 keccak256(abi.encode(request.claimCollaterals)),
-                traderToRecipient[request.trader]
+                liquidatorToRecipient[msg.sender]
             )
         );
         bytes32 digest = _hashTypedDataV4(msgHash);
