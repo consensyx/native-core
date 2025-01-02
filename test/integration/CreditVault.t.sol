@@ -809,6 +809,10 @@ contract CreditVaultTest is BaseTest {
         ICreditVault.TokenAmountUint[] memory tokens = new ICreditVault.TokenAmountUint[](1);
         tokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: collateralAmount});
 
+        vm.startPrank(deployer);
+        creditVault.setTrader(alice, alice, makeAddr("aliceRecipient"), true, true);
+        vm.stopPrank();
+
         // Approve and add collateral
         vm.startPrank(alice);
         IERC20(lpUSDC).approve(address(creditVault), collateralAmount);
@@ -841,6 +845,10 @@ contract CreditVaultTest is BaseTest {
         tokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: usdcAmount});
         tokens[1] = ICreditVault.TokenAmountUint({token: address(lpWETH), amount: wethAmount});
 
+        vm.startPrank(deployer);
+        creditVault.setTrader(alice, alice, makeAddr("aliceRecipient"), true, true);
+        vm.stopPrank();
+
         // Approve and add collateral
         vm.startPrank(alice);
         IERC20(lpUSDC).approve(address(creditVault), usdcAmount);
@@ -866,6 +874,10 @@ contract CreditVaultTest is BaseTest {
 
         vm.startPrank(alice);
         USDC.approve(address(creditVault), amount);
+
+        vm.startPrank(deployer);
+        creditVault.setTrader(alice, alice, makeAddr("aliceRecipient"), true, true);
+        vm.stopPrank();
 
         // Should revert because USDC is not an LP token
         vm.expectRevert(ErrorsLib.OnlyLpToken.selector);
@@ -905,6 +917,15 @@ contract CreditVaultTest is BaseTest {
         uint256 initialBobCollateral = creditVault.collateral(bob, address(lpUSDC));
 
         // Alice adds collateral for Bob
+        vm.startPrank(alice);
+        vm.expectRevert(ErrorsLib.OnlyTrader.selector);
+        creditVault.addCollateral(tokens, bob);
+        vm.stopPrank();
+
+        vm.startPrank(deployer);
+        creditVault.setTrader(bob, bob, makeAddr("bobRecipient"), true, true);
+        vm.stopPrank();
+
         vm.startPrank(alice);
         creditVault.addCollateral(tokens, bob);
         vm.stopPrank();
@@ -1138,6 +1159,10 @@ contract CreditVaultTest is BaseTest {
 
     function test_liquidate_notLiquidator() public {
         uint256 amount = 1000e6;
+
+        vm.startPrank(deployer);
+        creditVault.setTrader(alice, alice, makeAddr("aliceRecipient"), true, true);
+        vm.stopPrank();
 
         // Setup similar to success case but don't set bob as liquidator
         deal(address(USDC), alice, amount);

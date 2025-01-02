@@ -277,6 +277,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @param tokens Array of {token, amount} structs to be added as collateral
     /// @param trader Address of the trader receiving the collateral
     function addCollateral(TokenAmountUint[] calldata tokens, address trader) external {
+        require(traders[trader], ErrorsLib.OnlyTrader());
+
         for (uint256 i; i < tokens.length; ++i) {
             address token = tokens[i].token;
             require(supportedMarkets[token], ErrorsLib.OnlyLpToken());

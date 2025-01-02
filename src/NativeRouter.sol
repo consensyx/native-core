@@ -186,6 +186,8 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @param recipient The address to receive the refunded ETH
     /// @param amount The amount of ETH to refund
     function refundETH(address recipient, uint256 amount) public payable onlyOwner nonReentrant {
+        amount = Math.min(address(this).balance, amount);
+
         TransferHelper.safeTransferETH(recipient, amount);
         emit RefundETH(recipient, amount);
     }
@@ -196,7 +198,6 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @param recipient The address to receive the refunded tokens
     /// @param amount The amount of tokens to refund
     function refundERC20(address token, address recipient, uint256 amount) public payable onlyOwner nonReentrant {
-        // Note: We need to subtract the widget fee from the balance of the token in the contract
         amount = Math.min(IERC20(token).balanceOf(address(this)), amount);
 
         TransferHelper.safeTransfer(token, recipient, amount);
