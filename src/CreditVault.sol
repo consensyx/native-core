@@ -598,10 +598,12 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
                                      MODIFIERS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Separate the address of trader signer and settlement wallet as the frequency of the 2 operations is very different and trader could have different security setup for 2 addresses
+    /// @notice Separate the trader and settler accounts, they have different operation frequency and security setup requirements
     modifier onlyTraderOrSettler(address trader) {
         require(
-            traders[msg.sender] || (traders[trader] && msg.sender == traderToSettler[trader]), ErrorsLib.OnlyTrader()
+            (traders[trader] && trader == msg.sender) // Make sure a trader can only dispose of their own position
+                || (traders[trader] && msg.sender == traderToSettler[trader]), // Trader's settler can also settle their own position
+            ErrorsLib.OnlyTrader()
         );
         _;
     }
