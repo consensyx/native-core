@@ -266,6 +266,7 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     //////////////////////////////////////////////////////////////////////////*/
 
     function _mintShares(address to, uint256 shareAmount) internal {
+        require(shareAmount > 0, ErrorsLib.ZeroAmount());
         require(to != address(0), ErrorsLib.ZeroAddress());
 
         shares[to] += shareAmount;
@@ -273,6 +274,7 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     }
 
     function _burnShares(address from, uint256 shareAmount) internal {
+        require(shareAmount > 0, ErrorsLib.ZeroAmount());
         require(from != address(0), ErrorsLib.ZeroAddress());
 
         shares[from] -= shareAmount;
@@ -281,7 +283,8 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
 
     function _transferShares(address from, address to, uint256 _shares) internal {
         require(from != address(0) && to != address(0), ErrorsLib.ZeroAddress());
-        require(to != address(this), ErrorsLib.TransferSelf());
+        require(from != to, ErrorsLib.TransferSelf());
+        require(to != address(this), ErrorsLib.TransferToContract());
         require(_shares <= shares[from], ErrorsLib.InsufficientShares());
 
         shares[from] -= _shares;

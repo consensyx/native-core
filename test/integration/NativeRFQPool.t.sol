@@ -32,7 +32,9 @@ contract NativeRFQPoolTest is BaseTest {
         rfqPool2.setSigner(halo, true);
         rfqPool2.setEnableCallback(true);
 
-        creditVault.setNativePool(address(rfqPool2), true);
+        router2.setNativePool(address(rfqPool2), true);
+
+        creditVault.setCreditPool(address(rfqPool2), true);
 
         // Ensure CreditVault has enough WETH
         deal(address(weth), address(creditVault), 100 ether);

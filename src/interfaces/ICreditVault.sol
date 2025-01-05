@@ -129,10 +129,10 @@ interface ICreditVault {
         address trader, address liquidator, TokenAmountInt[] positionUpdates, TokenAmountUint[] claimCollaterals
     );
 
-    /// @notice Emitted when a native pool's status is updated
-    /// @param pool The address of the native pool
+    /// @notice Emitted when a credit pool's status is updated
+    /// @param pool The address of the credit pool
     /// @param isActive The new status of the pool
-    event NativePoolUpdated(address indexed pool, bool isActive);
+    event CreditPoolUpdated(address indexed pool, bool isActive);
 
     /// @notice Emitted when a trader or liquidator's rebalance limit is updated for a token
     /// @param operator The trader or liquidator address

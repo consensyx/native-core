@@ -56,8 +56,8 @@ library ErrorsLib {
     /// @notice Thrown when position update amount is invalid
     error InvalidPositionUpdateAmount();
 
-    /// @notice Thrown when RFQ pool address is invalid
-    error InvalidRFQPool();
+    /// @notice Thrown when the pool address is invalid Native pool
+    error InvalidNativePool();
 
     /// @notice Thrown when signature verification fails
     error InvalidSignature();
@@ -89,6 +89,9 @@ library ErrorsLib {
     /// @notice Thrown the address is not a trader or liquidator
     error NotTraderOrLiquidator();
 
+    /// @notice Thrown when caller is not the credit pool
+    error OnlyCreditPool();
+
     /// @notice Thrown when caller is not the credit vault
     error OnlyCreditVault();
 
@@ -103,9 +106,6 @@ library ErrorsLib {
 
     /// @notice Thrown when caller is not an LP token
     error OnlyLpToken();
-
-    /// @notice Thrown when caller is not a native pool
-    error OnlyNativePool();
 
     /// @notice Thrown when caller is not the native router
     error OnlyNativeRouter();
@@ -143,14 +143,14 @@ library ErrorsLib {
     /// @notice Thrown when token is already listed
     error TokenAlreadyListed();
 
-    /// @notice Thrown when trading is paused
-    error TradePaused();
-
     /// @notice Thrown when trader, settler and recipient are the same
     error TraderRecipientConflict();
 
-    /// @notice Thrown when transfer to self is attempted
+    /// @notice Thrown when transfer to self
     error TransferSelf();
+
+    /// @notice Thrown when transfer to current contract
+    error TransferToContract();
 
     /// @notice Thrown when unexpected msg.value is sent
     error UnexpectedMsgValue();

@@ -122,8 +122,11 @@ contract BaseTest is Test {
         rfqPool.setSigner(deployer, true);
         rfqPool.setEnableCallback(true);
 
+        // Router set native pool
+        router.setNativePool(address(rfqPool), true);
+
         // Setup CreditVault permissions and configurations
-        creditVault.setNativePool(address(rfqPool), true);
+        creditVault.setCreditPool(address(rfqPool), true);
         creditVault.setSigner(deployer);
         creditVault.setLiquidator(deployer, makeAddr("liquidatorRecipient"), true);
 
@@ -341,12 +344,12 @@ contract BaseTest is Test {
         rfqPool.setSigner(timeResearch, true);
         rfqPool.setSigner(gsr, true);
 
-        // Set as native pools in CreditVault
-        creditVault.setNativePool(address(haloRFQPool), true);
-        creditVault.setNativePool(address(tokkaRFQPool), true);
-        creditVault.setNativePool(address(quadraticRFQPool), true);
-        creditVault.setNativePool(address(timeResearchRFQPool), true);
-        creditVault.setNativePool(address(gsrRFQPool), true);
+        // Set as native pools in Native Router
+        router.setNativePool(address(haloRFQPool), true);
+        router.setNativePool(address(tokkaRFQPool), true);
+        router.setNativePool(address(quadraticRFQPool), true);
+        router.setNativePool(address(timeResearchRFQPool), true);
+        router.setNativePool(address(gsrRFQPool), true);
 
         // Credit vault set market marker address
         creditVault.setTrader(halo, halo, makeAddr("haloRecipient"), true, true);

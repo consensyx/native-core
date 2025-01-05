@@ -66,10 +66,17 @@ contract NativeLPTokenERC20Test is BaseTest {
         vm.stopPrank();
     }
 
+    function test_transfer_toContract() public {
+        vm.startPrank(alice);
+        vm.expectRevert(ErrorsLib.TransferToContract.selector);
+        lpUSDC.transfer(address(lpUSDC), 100e6);
+        vm.stopPrank();
+    }
+
     function test_transfer_toSelf() public {
         vm.startPrank(alice);
         vm.expectRevert(ErrorsLib.TransferSelf.selector);
-        lpUSDC.transfer(address(lpUSDC), 100e6);
+        lpUSDC.transfer(alice, 100e6);
         vm.stopPrank();
     }
 
@@ -316,7 +323,7 @@ contract NativeLPTokenERC20Test is BaseTest {
         vm.stopPrank();
 
         vm.startPrank(bob);
-        vm.expectRevert(ErrorsLib.TransferSelf.selector);
+        vm.expectRevert(ErrorsLib.TransferToContract.selector);
         lpUSDC.transferFrom(alice, address(lpUSDC), 50_000 * 10 ** 6);
         vm.stopPrank();
     }

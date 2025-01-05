@@ -29,6 +29,11 @@ interface INativeRouter is IQuote {
     // @notice Emitted when a signer's status is updated
     event SignerUpdated(address signer, bool isSigner);
 
+    /// @notice Emitted when a native pool's status is updated
+    /// @param pool The address of the native pool
+    /// @param isActive The new status of the pool
+    event NativePoolUpdated(address indexed pool, bool isActive);
+
     /// @notice Emitted when RFQ trade widget fee is transferred
     event WidgetFeeTransfer(
         address widgetFeeRecipient, uint256 widgetFeeRate, uint256 widgetFeeAmount, address widgetFeeToken

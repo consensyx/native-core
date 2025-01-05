@@ -284,7 +284,7 @@ contract CreditVaultTest is BaseTest {
         creditVault.supportMarket(newLPToken);
     }
 
-    function test_setNativePool() public {
+    function test_setCreditPool() public {
         // Create a new RFQ pool with deployer as owner
         vm.startPrank(deployer);
         NativeRFQPool newRFQPool =
@@ -294,29 +294,29 @@ contract CreditVaultTest is BaseTest {
         newRFQPool.setEnableCallback(true);
         vm.stopPrank();
 
-        // Test 1: Non-owner cannot call setNativePool
+        // Test 1: Non-owner cannot call setCreditPool
         vm.startPrank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
-        creditVault.setNativePool(address(newRFQPool), true);
+        creditVault.setCreditPool(address(newRFQPool), true);
         vm.stopPrank();
 
         // Test 2: Cannot set zero address as pool
         vm.startPrank(deployer);
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
-        creditVault.setNativePool(address(0), true);
+        creditVault.setCreditPool(address(0), true);
         vm.stopPrank();
 
         // Test 3: Successfully set pool to true and verify state
         vm.startPrank(deployer);
-        creditVault.setNativePool(address(newRFQPool), true);
+        creditVault.setCreditPool(address(newRFQPool), true);
 
-        assertTrue(creditVault.isNativePools(address(newRFQPool)), "Pool should be set as native pool");
+        assertTrue(creditVault.creditPools(address(newRFQPool)), "Pool should be set as native pool");
         vm.stopPrank();
 
         // Test 4: Successfully set pool to false and verify state
         vm.prank(deployer);
-        creditVault.setNativePool(address(newRFQPool), false);
-        assertFalse(creditVault.isNativePools(address(newRFQPool)), "Pool should not be native pool anymore");
+        creditVault.setCreditPool(address(newRFQPool), false);
+        assertFalse(creditVault.creditPools(address(newRFQPool)), "Pool should not be native pool anymore");
     }
 
     function test_setAllowance() public {
@@ -327,7 +327,7 @@ contract CreditVaultTest is BaseTest {
         newRFQPool.setEnableCallback(true);
 
         // Enable the pool in CreditVault
-        creditVault.setNativePool(address(newRFQPool), true);
+        creditVault.setCreditPool(address(newRFQPool), true);
         vm.stopPrank();
 
         // Prepare token amount array for testing
@@ -341,14 +341,7 @@ contract CreditVaultTest is BaseTest {
         creditVault.setAllowance(tokens, address(newRFQPool));
         vm.stopPrank();
 
-        // Test 2: Cannot set allowance for non-native pool
-        address nonNativePool = makeAddr("nonNativePool");
-        vm.startPrank(deployer);
-        vm.expectRevert(ErrorsLib.OnlyNativePool.selector);
-        creditVault.setAllowance(tokens, nonNativePool);
-        vm.stopPrank();
-
-        // Test 3: Cannot set allowance for zero address token
+        // Test 2: Cannot set allowance for zero address token
         ICreditVault.TokenAmountUint[] memory tokensWithZeroAddress = new ICreditVault.TokenAmountUint[](1);
         tokensWithZeroAddress[0] = ICreditVault.TokenAmountUint({token: address(0), amount: 1000});
 
@@ -357,7 +350,7 @@ contract CreditVaultTest is BaseTest {
         creditVault.setAllowance(tokensWithZeroAddress, address(newRFQPool));
         vm.stopPrank();
 
-        // Test 4: Successfully set allowance and verify values
+        // Test 3: Successfully set allowance and verify values
         vm.startPrank(deployer);
         // First set allowances to 0
         ICreditVault.TokenAmountUint[] memory zeroTokens = new ICreditVault.TokenAmountUint[](2);
@@ -381,7 +374,7 @@ contract CreditVaultTest is BaseTest {
         );
         vm.stopPrank();
 
-        // Test 5: Update existing allowances
+        // Test 4: Update existing allowances
         // First set to zero
         vm.startPrank(deployer);
         creditVault.setAllowance(zeroTokens, address(newRFQPool));
@@ -649,7 +642,7 @@ contract CreditVaultTest is BaseTest {
         NativeRFQPool newRFQPool =
             new NativeRFQPool(address(weth), address(router), address(creditVault), "TestRFQPool");
         newRFQPool.setEnableCallback(true);
-        creditVault.setNativePool(address(newRFQPool), true);
+        creditVault.setCreditPool(address(newRFQPool), true);
         vm.stopPrank();
 
         address trader = makeAddr("trader");
@@ -661,7 +654,7 @@ contract CreditVaultTest is BaseTest {
         // Test 1: Non-native pool cannot call swapCallback
         address nonNativePool = makeAddr("nonNativePool");
         vm.startPrank(nonNativePool);
-        vm.expectRevert(ErrorsLib.OnlyNativePool.selector);
+        vm.expectRevert(ErrorsLib.OnlyCreditPool.selector);
         creditVault.swapCallback(trader, sellerToken, amountIn, buyerToken, amountOut);
         vm.stopPrank();
 
@@ -705,7 +698,7 @@ contract CreditVaultTest is BaseTest {
     function test_settle_success() public {
         // 1. Build initial positions for trader (alice) via swapCallback
         vm.startPrank(deployer);
-        creditVault.setNativePool(address(rfqPool), true);
+        creditVault.setCreditPool(address(rfqPool), true);
         vm.stopPrank();
 
         // Simulate a trade: alice sells USDC to buy WETH
@@ -1045,7 +1038,7 @@ contract CreditVaultTest is BaseTest {
 
         // 1. Setup native pool and create initial position via swapCallback
         vm.startPrank(deployer);
-        creditVault.setNativePool(address(rfqPool), true);
+        creditVault.setCreditPool(address(rfqPool), true);
         creditVault.setLiquidator(bob, bobRecipient, true);
         creditVault.setSigner(deployer);
         creditVault.setTrader(alice, alice, bob, true, true);
@@ -1205,7 +1198,8 @@ contract CreditVaultTest is BaseTest {
     function test_repay_success() public {
         // 1. Setup initial positions via swapCallback
         vm.startPrank(deployer);
-        creditVault.setNativePool(address(rfqPool), true);
+        creditVault.setCreditPool(address(rfqPool), true);
+        creditVault.setTrader(alice, alice, makeAddr("aliceRecipient"), true, true);
         vm.stopPrank();
 
         // Simulate a trade: alice sells USDC to buy WETH

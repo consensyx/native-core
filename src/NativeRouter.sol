@@ -36,6 +36,9 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @dev Address of the CreditVault contract that manages credit and native pools
     address public vault;
 
+    /// @notice Mapping of all trusted Native pools
+    mapping(address => bool) public isNativePools;
+
     /// @dev Address of signer authorized to sign tradeRFQT and fillOrder signatures
     mapping(address => bool) public signers;
 
@@ -79,15 +82,15 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
 
         _verifyRFQSignature(quote);
 
-        bool isRFQPool = CreditVault(vault).isNativePools(quote.pool);
+        bool isNativePool = isNativePools[quote.pool];
         // address(this) is used for externalSwap
-        address payee = isRFQPool ? NativeRFQPool(payable(quote.pool)).treasury() : address(this);
+        address payee = isNativePool ? NativeRFQPool(payable(quote.pool)).treasury() : address(this);
 
         quote.effectiveSellerTokenAmount = _transferSellerToken(
             quote.multiHop, payee, quote.sellerToken, quote.effectiveSellerTokenAmount, quote.widgetFee
         );
 
-        if (isRFQPool) {
+        if (isNativePool) {
             NativeRFQPool(payable(quote.pool)).tradeRFQT(quote);
         } else if (whitelistRouter[quote.pool]) {
             Orders.Order memory order = Orders.Order({
@@ -113,7 +116,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
                 ErrorsLib.NotEnoughAmountOut(actualAmountOut, quote.amountOutMinimum)
             );
         } else {
-            revert ErrorsLib.InvalidRFQPool();
+            revert ErrorsLib.InvalidNativePool();
         }
     }
 
@@ -144,7 +147,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
         );
 
         // Verify pool is valid
-        require(CreditVault(vault).isNativePools(quote.pool), ErrorsLib.InvalidRFQPool());
+        require(isNativePools[quote.pool], ErrorsLib.InvalidNativePool());
 
         // Verify order signature
         _verifyOrderSignature(quote);
@@ -245,6 +248,17 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
 
             emit WhitelistRouterSet(routers[i], values[i]);
         }
+    }
+
+    /// @notice Updates native pool whitelist status
+    /// @dev Only callable by owner
+    /// @param isActive to whitelist, false to remove from whitelist
+    function setNativePool(address pool, bool isActive) external onlyOwner {
+        require(pool != address(0), ErrorsLib.ZeroAddress());
+
+        isNativePools[pool] = isActive;
+
+        emit NativePoolUpdated(pool, isActive);
     }
 
     /*//////////////////////////////////////////////////////////////////////////

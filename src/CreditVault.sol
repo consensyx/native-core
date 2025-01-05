@@ -8,13 +8,15 @@ import {EIP712, ECDSA} from "@openzeppelin/contracts/utils/cryptography/EIP712.s
 
 import "./libraries/ConstantsLib.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
-import {ICreditVault} from "./interfaces/ICreditVault.sol";
 import {SafeERC20} from "./libraries/SafeERC20.sol";
+import {ICreditVault} from "./interfaces/ICreditVault.sol";
+import {ReentrancyGuardTransient} from "./libraries/ReentrancyGuardTransient.sol";
+
 import {NativeLPToken} from "./NativeLPToken.sol";
 
 /// @title CreditVault - Manages trader positions and collateral
 /// @notice Handles asset custody, position settlement, and LP token integration
-contract CreditVault is ICreditVault, EIP712, Ownable2Step {
+contract CreditVault is ICreditVault, EIP712, Ownable2Step, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using SafeCast for int256;
@@ -34,6 +36,10 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
 
     /// @notice A list of all markets
     NativeLPToken[] public allLPTokens;
+
+    /// @notice Authorized Native Pool, enable market makers to lend funds from this vault for quoting
+    /// @dev The credit pool lends tokens from the credit vault and must update the trader's position via a callback.
+    mapping(address => bool) public creditPools;
 
     /// @notice Mapping of accumulated reserveFees per token (token => fee amount)
     mapping(address => uint256) public reserveFees;
@@ -75,9 +81,6 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @notice maps liquidator to their recipient address for liquidations
     mapping(address => address) public liquidatorToRecipient;
 
-    /// @notice Mapping of authorized isNativePools this vault is serving as treasury to
-    mapping(address => bool) public isNativePools;
-
     /// @notice Tracks rebalance caps for each trader/liquidator and token
     mapping(address => mapping(address => RebalanceCap)) public rebalanceCaps;
 
@@ -101,7 +104,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         address tokenOut,
         int256 amountOut
     ) external {
-        require(isNativePools[msg.sender], ErrorsLib.OnlyNativePool());
+        require(creditPools[msg.sender], ErrorsLib.OnlyCreditPool());
 
         positions[trader][tokenIn] += amountIn;
         positions[trader][tokenOut] -= amountOut;
@@ -136,7 +139,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
                     lpTokens[token].distributeYield(fundingFee);
 
                     // Verify the exchange rate increase is not more than 1%
-                    if (((lpTokens[token].exchangeRate() - beforeExchangeRate) * 10_000) / beforeExchangeRate > 100) {
+                    if (((lpTokens[token].exchangeRate() - beforeExchangeRate) * 10_000) > beforeExchangeRate * 100) {
                         revert ErrorsLib.ExchangeRateIncreaseTooMuch();
                     }
                 }
@@ -161,7 +164,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     function settle(
         SettlementRequest calldata request,
         bytes calldata signature
-    ) external onlyTraderOrSettler(request.trader) {
+    ) external onlyTraderOrSettler(request.trader) nonReentrant {
         _verifySettleSignature(request, signature);
 
         _updatePositions(request.positionUpdates, request.trader);
@@ -193,7 +196,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     function removeCollateral(
         RemoveCollateralRequest calldata request,
         bytes calldata signature
-    ) external onlyTraderOrSettler(request.trader) {
+    ) external onlyTraderOrSettler(request.trader) nonReentrant {
         _verifyRemoveCollateralSignature(request, signature);
 
         for (uint256 i; i < request.tokens.length; ++i) {
@@ -214,11 +217,33 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         emit CollateralRemoved(request.trader, request.tokens);
     }
 
+    /// @notice Repays trader's short positions
+    /// @param positionUpdates Array of {token, amount} structs representing positions to repay
+    /// @param trader Address of the trader whose positions are being repaid
+    function repay(
+        TokenAmountInt[] calldata positionUpdates,
+        address trader
+    ) external onlyTraderOrSettler(trader) nonReentrant {
+        _updatePositions(positionUpdates, trader);
+
+        // the safeCast to Uint256 will revert if the repayments amount is negative
+        for (uint256 i; i < positionUpdates.length; ++i) {
+            IERC20(positionUpdates[i].token).safeTransferFrom(
+                msg.sender, address(this), positionUpdates[i].amount.toUint256()
+            );
+        }
+
+        emit Repaid(trader, positionUpdates);
+    }
+
     /// @notice Called by liquidators to liquidate the underwater positions
     /// @dev This transaction requires off-chain calculation to verify if the trader's credit meets the criteria.
     /// @param request The struct of the liquidation request containing info of long and short positions to liquidate
     /// @param signature The signature of the liquidation request
-    function liquidate(LiquidationRequest calldata request, bytes calldata signature) external onlyLiquidator {
+    function liquidate(
+        LiquidationRequest calldata request,
+        bytes calldata signature
+    ) external onlyLiquidator nonReentrant {
         _verifyLiquidationSignature(request, signature);
 
         _updatePositions(request.positionUpdates, request.trader);
@@ -276,7 +301,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @dev Off-chain system will update trader's credit limit off-chain via event emission
     /// @param tokens Array of {token, amount} structs to be added as collateral
     /// @param trader Address of the trader receiving the collateral
-    function addCollateral(TokenAmountUint[] calldata tokens, address trader) external {
+    function addCollateral(TokenAmountUint[] calldata tokens, address trader) external nonReentrant {
         require(traders[trader], ErrorsLib.OnlyTrader());
 
         for (uint256 i; i < tokens.length; ++i) {
@@ -290,23 +315,6 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         }
 
         emit CollateralAdded(trader, tokens);
-    }
-
-    /// @notice Repays trader's short positions
-    /// @dev PERMISSIONLESS: Anyone can repay positions for any trader
-    /// @param positionUpdates Array of {token, amount} structs representing positions to repay
-    /// @param trader Address of the trader whose positions are being repaid
-    function repay(TokenAmountInt[] calldata positionUpdates, address trader) external {
-        _updatePositions(positionUpdates, trader);
-
-        // the safeCast to Uint256 will revert if the repayments amount is negative
-        for (uint256 i; i < positionUpdates.length; ++i) {
-            IERC20(positionUpdates[i].token).safeTransferFrom(
-                msg.sender, address(this), positionUpdates[i].amount.toUint256()
-            );
-        }
-
-        emit Repaid(trader, positionUpdates);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -354,15 +362,15 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
         IERC20(underlying).safeTransfer(recipient, amount);
     }
 
-    /// @notice Updates native pool whitelist status
-    /// @dev Only callable by owner
+    /// @notice Updates credit pool status
+    /// @param pool The address of credit pool
     /// @param isActive to whitelist, false to remove from whitelist
-    function setNativePool(address pool, bool isActive) external onlyOwner {
+    function setCreditPool(address pool, bool isActive) external onlyOwner {
         require(pool != address(0), ErrorsLib.ZeroAddress());
 
-        isNativePools[pool] = isActive;
+        creditPools[pool] = isActive;
 
-        emit NativePoolUpdated(pool, isActive);
+        emit CreditPoolUpdated(pool, isActive);
     }
 
     /// @notice Approves native pool to spend vault's underlying tokens
@@ -371,8 +379,6 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
     /// @param tokens Array of {token, amount} structs to approve
     /// @param pool Address of native pool to receive approval
     function setAllowance(TokenAmountUint[] calldata tokens, address pool) external onlyOwner {
-        require(isNativePools[pool], ErrorsLib.OnlyNativePool());
-
         for (uint256 i; i < tokens.length; ++i) {
             require(tokens[i].token != address(0), ErrorsLib.ZeroAddress());
 
@@ -488,6 +494,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step {
             address token = positionUpdates[i].token;
             int256 amount = positionUpdates[i].amount;
             int256 newPosition = positions[trader][token] + amount;
+            // Make sure the token is supported underlying token
+            require(address(lpTokens[token]) != address(0), ErrorsLib.InvalidLPToken());
 
             // Position must decrease without flipping its sign (e.g. long 100 -> long 50, not long 100 -> short 20)
             if (positions[trader][token] * amount >= 0 || positions[trader][token] * newPosition < 0) {

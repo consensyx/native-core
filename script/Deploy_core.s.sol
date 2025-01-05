@@ -49,7 +49,7 @@ contract DeployCoreScript is Script {
         rfqPool.setEnableCallback(true);
 
         // 5 Set credit vault configuration
-        creditVault.setNativePool(address(rfqPool), true);
+        creditVault.setCreditPool(address(rfqPool), true);
         creditVault.setSigner(deployer);
         creditVault.setLiquidator(deployer, deployer, true);
         creditVault.setEpochUpdater(deployer);
