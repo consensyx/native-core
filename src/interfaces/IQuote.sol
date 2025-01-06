@@ -21,10 +21,6 @@ interface IQuote {
         address sellerToken;
         /// @notice The token that the trader buys.
         address buyerToken;
-        /// @notice The amount of sellerToken sold in this trade. The exchange rate
-        /// is going to be preserved as the buyerTokenAmount / sellerTokenAmount ratio.
-        /// Most commonly, effectiveSellerTokenAmount will == sellerTokenAmount.
-        uint256 effectiveSellerTokenAmount;
         /// @notice The max amount of sellerToken sold.
         uint256 sellerTokenAmount;
         /// @notice The amount of buyerToken bought when sellerTokenAmount is sold.
@@ -67,8 +63,6 @@ interface IQuote {
         address tokenOut;
         /// @notice The maximum amount of tokenIn that can be sold
         uint256 amountIn;
-        /// @notice The actual amount of tokenIn that will be used in the trade
-        uint256 effectiveAmountIn;
         /// @notice The maximum amount of tokenOut that will be received by the swapper
         uint256 amountOut;
         /// @notice The recipient of the tokenOut

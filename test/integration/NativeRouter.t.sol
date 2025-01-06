@@ -205,7 +205,6 @@ contract NativeRouterTest is BaseTest {
             buyerToken: address(USDC),
             sellerTokenAmount: sellAmount,
             buyerTokenAmount: expectedUsdcAmount,
-            effectiveSellerTokenAmount: sellAmount,
             amountOutMinimum: expectedUsdcAmount,
             deadlineTimestamp: block.timestamp + 1 hours,
             nonce: 0,

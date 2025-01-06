@@ -81,7 +81,7 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
 
     /// @notice See NativeRouter.tradeRFQT for detailed documentation
     /// @dev Called by NativeRouter to execute RFQ trades in the pool
-    function tradeRFQT(RFQTQuote memory quote) external override onlyRouter {
+    function tradeRFQT(uint256 effectiveSellerTokenAmount, RFQTQuote memory quote) external override onlyRouter {
         // Prevent replay attacks
         require(!nonces[quote.nonce], ErrorsLib.NonceUsed());
 
@@ -102,14 +102,14 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             quote.sellerToken,
             quote.buyerTokenAmount,
             quote.sellerTokenAmount,
-            quote.effectiveSellerTokenAmount
+            effectiveSellerTokenAmount
         );
 
         emit RFQTrade(
             quote.recipient,
             quote.sellerToken,
             quote.buyerToken,
-            quote.effectiveSellerTokenAmount,
+            effectiveSellerTokenAmount,
             buyerTokenAmount,
             quote.quoteId,
             quote.signer
@@ -117,8 +117,8 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     }
 
     /// @notice See {NativeRouter-fillOrder} for detailed documentation
-    /// @dev Called by NativeRouter to execute auto-sign trades in the pool
-    function fillOrder(PermitQuote memory quote) external override onlyRouter {
+    /// @dev Called by NativeRouter to execute fill order trades in the pool
+    function fillOrder(uint256 effectiveAmountIn, PermitQuote memory quote) external override onlyRouter {
         // Prevent replay attacks
         require(!nonces[quote.nonce], ErrorsLib.NonceUsed());
 
@@ -129,7 +129,7 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             quote.tokenIn,
             quote.amountOut,
             quote.amountIn,
-            quote.effectiveAmountIn
+            effectiveAmountIn
         );
 
         // Mark nonce as used
@@ -139,7 +139,7 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             quote.recipient,
             quote.tokenIn,
             quote.tokenOut,
-            quote.effectiveAmountIn,
+            effectiveAmountIn,
             tokenOutAmount,
             quote.marketMaker,
             quote.orderBookSig,

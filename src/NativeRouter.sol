@@ -74,7 +74,6 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @dev This function facilitates trades between swappers and Native's partnered market makers:
     function tradeRFQT(RFQTQuote memory quote) external payable override nonReentrant {
         require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
-        require(quote.effectiveSellerTokenAmount <= quote.sellerTokenAmount, ErrorsLib.InvalidAmount());
         require(block.timestamp <= quote.deadlineTimestamp, ErrorsLib.QuoteExpired());
 
         _verifyRFQSignature(quote);
@@ -83,12 +82,11 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
         // address(this) is used for externalSwap
         address payee = isNativePool ? NativeRFQPool(payable(quote.pool)).treasury() : address(this);
 
-        quote.effectiveSellerTokenAmount = _transferSellerToken(
-            quote.multiHop, payee, quote.sellerToken, quote.effectiveSellerTokenAmount, quote.widgetFee
-        );
+        uint256 effectiveSellerTokenAmount =
+            _transferSellerToken(quote.multiHop, payee, quote.sellerToken, quote.sellerTokenAmount, quote.widgetFee);
 
         if (isNativePool) {
-            NativeRFQPool(payable(quote.pool)).tradeRFQT(quote);
+            NativeRFQPool(payable(quote.pool)).tradeRFQT(effectiveSellerTokenAmount, quote);
         } else if (whitelistRouter[quote.pool]) {
             Orders.Order memory order = Orders.Order({
                 id: 0, // not used
@@ -105,7 +103,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
             });
 
             uint256 actualAmountOut = ExternalSwap.externalSwap(
-                order, quote.effectiveSellerTokenAmount, quote.recipient, address(this), quote.externalSwapCalldata
+                order, effectiveSellerTokenAmount, quote.recipient, address(this), quote.externalSwapCalldata
             );
 
             require(
@@ -128,8 +126,6 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     ) external nonReentrant {
         // Validate widget fee rate
         require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
-        // Validate input amounts and expiration
-        require(quote.effectiveAmountIn <= quote.amountIn, ErrorsLib.InvalidAmount());
         require(
             block.timestamp <= quote.deadline && block.timestamp <= swapperPermit.deadline, ErrorsLib.QuoteExpired()
         );
@@ -157,18 +153,19 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
 
         // Calculate and handle widget fee if applicable
         uint256 widgetFee = quote.widgetFee.feeRate > 0 ? (quote.amountIn * quote.widgetFee.feeRate) / 10_000 : 0;
+        uint256 effectiveAmountIn = quote.amountIn;
 
         if (widgetFee > 0) {
-            quote.effectiveAmountIn -= widgetFee;
+            effectiveAmountIn -= widgetFee;
             // Transfer widget fee to fee recipient
             IERC20(quote.tokenIn).safeTransfer(quote.widgetFee.feeRecipient, widgetFee);
         }
 
         // Transfer tokens to market maker's treasury
-        IERC20(quote.tokenIn).safeTransfer(NativeRFQPool(payable(quote.pool)).treasury(), quote.effectiveAmountIn);
+        IERC20(quote.tokenIn).safeTransfer(NativeRFQPool(payable(quote.pool)).treasury(), effectiveAmountIn);
 
         // Execute the trade on the RFQ pool
-        NativeRFQPool(payable(quote.pool)).fillOrder(quote);
+        NativeRFQPool(payable(quote.pool)).fillOrder(effectiveAmountIn, quote);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
