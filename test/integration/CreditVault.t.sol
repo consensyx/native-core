@@ -19,6 +19,11 @@ contract CreditVaultTest is BaseTest {
     function setUp() public override {
         super.setUp();
 
+        vm.startPrank(deployer);
+        // Set min redeem interval to 0 to avoid transfer in cooldown period
+        lpUSDC.setMinRedeemInterval(0);
+        vm.stopPrank();
+
         // Set initial timestamp to avoid any cooldown issues
         vm.warp(1_000_000);
 
@@ -288,10 +293,8 @@ contract CreditVaultTest is BaseTest {
         // Create a new RFQ pool with deployer as owner
         vm.startPrank(deployer);
         NativeRFQPool newRFQPool =
-            new NativeRFQPool(address(weth), address(router), address(creditVault), "TestRFQPool");
+            new NativeRFQPool(true, address(weth), address(router), address(creditVault), "TestRFQPool");
 
-        // Enable callback for the pool (deployer is the owner)
-        newRFQPool.setEnableCallback(true);
         vm.stopPrank();
 
         // Test 1: Non-owner cannot call setCreditPool
@@ -323,8 +326,7 @@ contract CreditVaultTest is BaseTest {
         // Setup: Create and configure a new RFQ pool
         vm.startPrank(deployer);
         NativeRFQPool newRFQPool =
-            new NativeRFQPool(address(weth), address(router), address(creditVault), "TestRFQPool");
-        newRFQPool.setEnableCallback(true);
+            new NativeRFQPool(true, address(weth), address(router), address(creditVault), "TestRFQPool");
 
         // Enable the pool in CreditVault
         creditVault.setCreditPool(address(newRFQPool), true);
@@ -640,8 +642,7 @@ contract CreditVaultTest is BaseTest {
         // Setup: Create and configure a new RFQ pool
         vm.startPrank(deployer);
         NativeRFQPool newRFQPool =
-            new NativeRFQPool(address(weth), address(router), address(creditVault), "TestRFQPool");
-        newRFQPool.setEnableCallback(true);
+            new NativeRFQPool(true, address(weth), address(router), address(creditVault), "TestRFQPool");
         creditVault.setCreditPool(address(newRFQPool), true);
         vm.stopPrank();
 

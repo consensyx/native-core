@@ -32,6 +32,9 @@ library ErrorsLib {
     /// @notice Thrown when an external contract call fails
     error ExternalCallFailed(address target, bytes4 selector);
 
+    /// @notice Thrown when feature is paused
+    error FeaturePaused();
+
     /// @notice Thrown when there are insufficient funding fees to withdraw
     error InsufficientFundingFees();
 
@@ -145,6 +148,9 @@ library ErrorsLib {
 
     /// @notice Thrown when trader, settler and recipient are the same
     error TraderRecipientConflict();
+
+    /// @notice Thrown when transfer is in cooldown period
+    error TransferInCooldown();
 
     /// @notice Thrown when transfer to self
     error TransferSelf();

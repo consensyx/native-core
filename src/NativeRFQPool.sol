@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {EIP712, ECDSA} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
@@ -16,12 +17,16 @@ import {INativeRFQPool} from "./interfaces/INativeRFQPool.sol";
 
 contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     using SafeERC20 for IERC20;
+    using SafeCast for int256;
+    using SafeCast for uint256;
     using Address for address payable;
 
-    /// @notice Flag to enable/disable post-trade callback to treasury
-    bool public isEnableCallback;
+    /// @notice Flag to indicate if this pool uses credit vault funds for market making
+    /// @dev If true, market maker uses credit vault funds for quotes. If false, market maker uses their own funds
+    bool public immutable isCreditPool;
 
-    /// @notice Pool name
+    /// @notice The Pool name
+    /// @dev Every market maker has their own pool if they use their own funds to quote
     string public name;
 
     /// @notice Address of the router contract that can execute trades
@@ -30,7 +35,7 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     /// @dev Address of the Wrapped Ether (WETH9) contract
     address public immutable WETH9;
 
-    /// @notice Address of the treasury that holds and manages tokens, can be a CreditVault or market maker own account
+    /// @notice Address that holds and manages tokens - points to CreditVault if isCreditPool is true, otherwise points to market maker's own account
     address public treasury;
 
     /// @notice Mapping to track used nonces for preventing replay attacks
@@ -52,6 +57,7 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     //////////////////////////////////////////////////////////////////////////*/
 
     constructor(
+        bool _isCreditPool,
         address _WETH9,
         address _router,
         address _treasury,
@@ -62,6 +68,7 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             ErrorsLib.ZeroInput()
         );
 
+        isCreditPool = _isCreditPool;
         name = _name;
         router = _router;
         WETH9 = _WETH9;
@@ -112,6 +119,9 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     /// @notice See {NativeRouter-fillOrder} for detailed documentation
     /// @dev Called by NativeRouter to execute auto-sign trades in the pool
     function fillOrder(PermitQuote memory quote) external override onlyRouter {
+        // Prevent replay attacks
+        require(!nonces[quote.nonce], ErrorsLib.NonceUsed());
+
         uint256 tokenOutAmount = _transferAndCallback(
             quote.marketMaker,
             quote.recipient,
@@ -121,6 +131,9 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             quote.amountIn,
             quote.effectiveAmountIn
         );
+
+        // Mark nonce as used
+        nonces[quote.nonce] = true;
 
         emit OrderFilled(
             quote.recipient,
@@ -155,14 +168,6 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         emit SignerUpdated(signer, _isSigner);
     }
 
-    /// @notice Enables or disables post-trade callback functionality
-    /// @dev Only callable by owner
-    /// @param isEnable True to enable callbacks, false to disable
-    function setEnableCallback(bool isEnable) external onlyOwner {
-        isEnableCallback = isEnable;
-        emit EnableCallbackSet(isEnable);
-    }
-
     /*//////////////////////////////////////////////////////////////////////////
                                 INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
@@ -180,15 +185,15 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             ? (effectiveSellerTokenAmount * buyerTokenAmount) / sellerTokenAmount
             : buyerTokenAmount;
 
-        if (isEnableCallback) {
+        if (isCreditPool) {
             require(
-                effectiveSellerTokenAmount <= uint256(type(int256).max)
-                    && _buyerTokenAmount <= uint256(type(int256).max),
+                effectiveSellerTokenAmount <= (type(int256).max).toUint256()
+                    && _buyerTokenAmount <= (type(int256).max).toUint256(),
                 ErrorsLib.Overflow()
             );
 
             ICreditVault(treasury).swapCallback(
-                signer, sellerToken, int256(effectiveSellerTokenAmount), buyerToken, int256(_buyerTokenAmount)
+                signer, sellerToken, effectiveSellerTokenAmount.toInt256(), buyerToken, _buyerTokenAmount.toInt256()
             );
         }
 

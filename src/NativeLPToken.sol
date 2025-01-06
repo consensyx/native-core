@@ -3,7 +3,6 @@ pragma solidity 0.8.28;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {Pausable} from "@openzeppelin/contracts/security/Pausable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
@@ -15,12 +14,18 @@ import {ReentrancyGuardTransient} from "./libraries/ReentrancyGuardTransient.sol
 /// @title NativeLPToken - Yield-bearing LP token contract
 /// @notice A token contract that represents liquidity provider positions and distributes yield
 /// @dev This contract manages LP shares and underlying assets, accruing yield based on protocol revenue
-contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
+contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient {
     using SafeERC20 for IERC20Metadata;
 
     /*//////////////////////////////////////////////////////////////////////////
                                      STATE VARIABLES
     //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Whether deposit operations are paused
+    bool public depositPaused;
+
+    /// @notice Whether redeem operations are paused
+    bool public redeemPaused;
 
     /// @notice The underlying token that this LP token represents
     IERC20Metadata public underlying;
@@ -53,9 +58,24 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     /// @notice Mapping of user addresses to their last deposit timestamp
     mapping(address => uint256) public lastDepositTimestamp;
 
+    /// @notice Mapping of addresses to their whitelist status for cooldown bypass
+    mapping(address => bool) public cooldownWhitelist;
+
     /*//////////////////////////////////////////////////////////////////////////
                                         EVENTS
     //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Event emitted when deposit operation is paused
+    event DepositPaused();
+
+    /// @notice Event emitted when deposit operation is unpaused
+    event DepositUnpaused();
+
+    /// @notice Event emitted when redeem operation is paused
+    event RedeemPaused();
+
+    /// @notice Event emitted when redeem operation is unpaused
+    event RedeemUnpaused();
 
     /// @notice Event emitted when yield is distributed to LP holders
     event YieldDistributed(uint256 yieldAmount);
@@ -78,6 +98,9 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     /// @notice Event emitted when early withdraw fee is updated
     event EarlyWithdrawFeeBipsUpdated(uint256 oldFeeBips, uint256 newFeeBips);
 
+    /// @notice Event emitted when an address's whitelist status is updated
+    event WhitelistUpdated(address indexed account, bool status);
+
     /*//////////////////////////////////////////////////////////////////////////
                                      CONSTRUCTOR
     //////////////////////////////////////////////////////////////////////////*/
@@ -97,7 +120,12 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     /// @notice Deposit underlying tokens to mint LP tokens
     /// @param amount Amount of underlying tokens to deposit
     /// @return sharesToMint Amount of LP tokens minted
-    function deposit(uint256 amount) external nonReentrant whenNotPaused returns (uint256 sharesToMint) {
+    function deposit(uint256 amount)
+        external
+        nonReentrant
+        whenNotPaused(depositPaused)
+        returns (uint256 sharesToMint)
+    {
         require(amount >= minDeposit && amount > 0, ErrorsLib.BelowMinimumDeposit());
 
         // Transfer underlying to vault
@@ -126,7 +154,12 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     /// @notice Redeem LP tokens for underlying tokens
     /// @param sharesToBurn Amount of LP tokens to burn
     /// @return underlyingAmount Amount of underlying tokens received
-    function redeem(uint256 sharesToBurn) external nonReentrant whenNotPaused returns (uint256 underlyingAmount) {
+    function redeem(uint256 sharesToBurn)
+        external
+        nonReentrant
+        whenNotPaused(redeemPaused)
+        returns (uint256 underlyingAmount)
+    {
         require(sharesToBurn > 0, ErrorsLib.ZeroAmount());
         require(shares[msg.sender] >= sharesToBurn, ErrorsLib.InsufficientShares());
 
@@ -219,18 +252,6 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
         return _decimals;
     }
 
-    /// @notice Pauses all deposit and redeem operations
-    /// @dev Can only be called by the owner
-    function pause() external onlyOwner {
-        _pause();
-    }
-
-    /// @notice Unpauses all deposit and redeem operations
-    /// @dev Can only be called by the owner
-    function unpause() external onlyOwner {
-        _unpause();
-    }
-
     /// @notice Sets the minimum deposit amount
     /// @param _minDeposit New minimum deposit amount
     /// @dev Can only be called by the owner
@@ -259,6 +280,51 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
         earlyWithdrawFeeBips = _earlyWithdrawFeeBips;
 
         emit EarlyWithdrawFeeBipsUpdated(oldFeeBips, _earlyWithdrawFeeBips);
+    }
+
+    /// @notice Sets the whitelist status for an address to bypass cooldown
+    /// @param account The address to update
+    /// @param status The new whitelist status
+    function setWhitelist(address account, bool status) external onlyOwner {
+        require(account != address(0), ErrorsLib.ZeroAddress());
+
+        cooldownWhitelist[account] = status;
+        emit WhitelistUpdated(account, status);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                     PAUSE OPERATIONS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Function to pause deposit operation
+    function pauseDeposit() external onlyOwner {
+        depositPaused = true;
+        emit DepositPaused();
+    }
+
+    /// @notice Function to unpause deposit operation
+    function unpauseDeposit() external onlyOwner {
+        depositPaused = false;
+        emit DepositUnpaused();
+    }
+
+    /// @notice Function to pause redeem operation
+    function pauseRedeem() external onlyOwner {
+        redeemPaused = true;
+        emit RedeemPaused();
+    }
+
+    /// @notice Function to unpause redeem operation
+    function unpauseRedeem() external onlyOwner {
+        redeemPaused = false;
+        emit RedeemUnpaused();
+    }
+
+    modifier whenNotPaused(bool feature) {
+        if (feature) {
+            revert ErrorsLib.FeaturePaused();
+        }
+        _;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -299,6 +365,12 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient, Pausable {
     /// @param to The address to transfer to
     /// @param amount The underlying token amount to transfer
     function _transfer(address from, address to, uint256 amount) internal override {
+        // During cooldown period, user can't transfer shares, but can still redeem
+        require(
+            lastDepositTimestamp[from] + minRedeemInterval <= block.timestamp || cooldownWhitelist[from],
+            ErrorsLib.TransferInCooldown()
+        );
+
         uint256 sharesToTransfer = getSharesByUnderlying(amount);
         _transferShares(from, to, sharesToTransfer);
         emit Transfer(from, to, amount);

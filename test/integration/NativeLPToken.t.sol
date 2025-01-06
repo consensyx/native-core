@@ -53,12 +53,12 @@ contract NativeLPTokenTest is BaseTest {
     function test_deposit_whenPaused() public {
         // Setup
         vm.prank(deployer);
-        lpUSDC.pause();
+        lpUSDC.pauseDeposit();
 
         // Try to deposit while paused
         vm.startPrank(alice);
         USDC.approve(address(lpUSDC), 100_000_000);
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert(ErrorsLib.FeaturePaused.selector);
         lpUSDC.deposit(100_000_000);
         vm.stopPrank();
     }
@@ -201,11 +201,11 @@ contract NativeLPTokenTest is BaseTest {
 
         // Pause contract
         vm.prank(deployer);
-        lpUSDC.pause();
+        lpUSDC.pauseRedeem();
 
         // Try to redeem while paused
         vm.startPrank(alice);
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert(ErrorsLib.FeaturePaused.selector);
         lpUSDC.redeem(mintedShares);
         vm.stopPrank();
     }
@@ -362,38 +362,39 @@ contract NativeLPTokenTest is BaseTest {
         // Ensure only the owner can pause
         vm.prank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
-        lpUSDC.pause();
+        lpUSDC.pauseDeposit();
 
         // Owner pauses the contract
         vm.startPrank(deployer);
-        lpUSDC.pause();
+        lpUSDC.pauseDeposit();
+        lpUSDC.pauseRedeem();
         vm.stopPrank();
 
         // Attempt to deposit while paused
         vm.startPrank(alice);
         uint256 depositAmount = 100_000_000; // 100 USDC
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert(ErrorsLib.FeaturePaused.selector);
         lpUSDC.deposit(depositAmount);
         vm.stopPrank();
 
         // Attempt to redeem while paused
         vm.startPrank(alice);
         uint256 aliceShares = lpUSDC.shares(alice);
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert(ErrorsLib.FeaturePaused.selector);
         lpUSDC.redeem(aliceShares);
         vm.stopPrank();
 
         // Ensure only the owner can unpause
         vm.prank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
-        lpUSDC.unpause();
+        lpUSDC.unpauseDeposit();
 
-        // Owner unpauses the contract
+        // Owner unpauses deposit
         vm.startPrank(deployer);
-        lpUSDC.unpause();
+        lpUSDC.unpauseDeposit();
         vm.stopPrank();
 
-        // Deposit should succeed after unpausing
+        // Deposit should succeed after unpausing deposit
         vm.startPrank(alice);
         USDC.approve(address(lpUSDC), depositAmount); // 使用 underlying 替代 usdc
         lpUSDC.deposit(depositAmount);
@@ -403,7 +404,12 @@ contract NativeLPTokenTest is BaseTest {
         // Warp forward past the minimum redeem interval
         vm.warp(block.timestamp + lpUSDC.minRedeemInterval() + 1);
 
-        // Redeem should succeed after unpausing
+        // Owner unpauses redeem
+        vm.startPrank(deployer);
+        lpUSDC.unpauseRedeem();
+        vm.stopPrank();
+
+        // Redeem should succeed after unpausing redeem
         vm.startPrank(alice);
         uint256 redeemAmount = lpUSDC.redeem(depositAmount);
         assertEq(redeemAmount, depositAmount);
@@ -699,5 +705,90 @@ contract NativeLPTokenTest is BaseTest {
             depositAmount + firstYield + secondYield,
             "Incorrect total underlying after multiple yields"
         );
+    }
+
+    function test_transfer_inCooldown() public {
+        // Setup - first deposit
+        uint256 depositAmount = 100_000_000; // 100 USDC
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        lpUSDC.deposit(depositAmount);
+
+        // Try to transfer immediately after deposit (while in cooldown)
+        uint256 transferAmount = 50_000_000; // 50 USDC
+        vm.expectRevert(ErrorsLib.TransferInCooldown.selector);
+        lpUSDC.transfer(bob, transferAmount);
+        vm.stopPrank();
+
+        // Verify states remain unchanged
+        assertEq(lpUSDC.shares(alice), depositAmount, "Alice's shares should remain unchanged");
+        assertEq(lpUSDC.shares(bob), 0, "Bob should have no shares");
+
+        // Warp time to after cooldown period
+        vm.warp(block.timestamp + lpUSDC.minRedeemInterval() + 1);
+
+        // Transfer should succeed after cooldown
+        vm.startPrank(alice);
+        lpUSDC.transfer(bob, transferAmount);
+        vm.stopPrank();
+
+        // Verify transfer succeeded
+        assertEq(
+            lpUSDC.shares(alice),
+            depositAmount - lpUSDC.getSharesByUnderlying(transferAmount),
+            "Alice's remaining shares incorrect"
+        );
+        assertEq(lpUSDC.shares(bob), lpUSDC.getSharesByUnderlying(transferAmount), "Bob's received shares incorrect");
+    }
+
+    function test_transfer_cooldownWhitelist() public {
+        // Setup - first deposit
+        uint256 depositAmount = 100_000_000; // 100 USDC
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        lpUSDC.deposit(depositAmount);
+        vm.stopPrank();
+
+        // Try to transfer immediately after deposit (should fail as not whitelisted)
+        uint256 transferAmount = 50_000_000; // 50 USDC
+        vm.startPrank(alice);
+        vm.expectRevert(ErrorsLib.TransferInCooldown.selector);
+        lpUSDC.transfer(bob, transferAmount);
+        vm.stopPrank();
+
+        // Add alice to whitelist
+        vm.startPrank(deployer);
+        lpUSDC.setWhitelist(alice, true);
+        vm.stopPrank();
+
+        // Verify alice is whitelisted
+        assertTrue(lpUSDC.cooldownWhitelist(alice), "Alice should be whitelisted");
+
+        // Transfer should now succeed even in cooldown period
+        vm.startPrank(alice);
+        lpUSDC.transfer(bob, transferAmount);
+        vm.stopPrank();
+
+        // Verify transfer succeeded
+        assertEq(
+            lpUSDC.shares(alice),
+            depositAmount - lpUSDC.getSharesByUnderlying(transferAmount),
+            "Alice's remaining shares incorrect"
+        );
+        assertEq(lpUSDC.shares(bob), lpUSDC.getSharesByUnderlying(transferAmount), "Bob's received shares incorrect");
+
+        // Remove alice from whitelist
+        vm.startPrank(deployer);
+        lpUSDC.setWhitelist(alice, false);
+        vm.stopPrank();
+
+        // Verify alice is no longer whitelisted
+        assertFalse(lpUSDC.cooldownWhitelist(alice), "Alice should not be whitelisted");
+
+        // Try to transfer again (should fail as no longer whitelisted)
+        vm.startPrank(alice);
+        vm.expectRevert(ErrorsLib.TransferInCooldown.selector);
+        lpUSDC.transfer(bob, transferAmount);
+        vm.stopPrank();
     }
 }

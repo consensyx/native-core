@@ -32,7 +32,7 @@ contract DeployPMMPoolScript is Script {
         address treasury = deployer;
 
         // Deploy new RFQ Pool with initial configuration
-        NativeRFQPool rfqPool = new NativeRFQPool(WETH, router, treasury, "Native RFQ Pool");
+        NativeRFQPool rfqPool = new NativeRFQPool(false, WETH, router, treasury, "Native RFQ Pool");
 
         // Set deployer as initial signer
         // TODO: replace actual PMM signer address in production

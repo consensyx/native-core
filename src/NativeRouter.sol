@@ -42,9 +42,6 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     /// @dev Address of signer authorized to sign tradeRFQT and fillOrder signatures
     mapping(address => bool) public signers;
 
-    /// @notice Mapping to track used nonces for preventing replay attacks
-    mapping(uint256 => bool) public nonces;
-
     /// @dev Mapping to track which external routers are whitelisted for swaps
     mapping(address => bool) public whitelistRouter;
 
@@ -137,9 +134,6 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
             block.timestamp <= quote.deadline && block.timestamp <= swapperPermit.deadline, ErrorsLib.QuoteExpired()
         );
 
-        // Prevent replay attacks
-        require(!nonces[quote.nonce], ErrorsLib.NonceUsed());
-
         // Verify permit2 token details match the quote
         require(
             swapperPermit.permitted.token == quote.tokenIn && swapperPermit.permitted.amount == quote.amountIn,
@@ -172,9 +166,6 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
 
         // Transfer tokens to market maker's treasury
         IERC20(quote.tokenIn).safeTransfer(NativeRFQPool(payable(quote.pool)).treasury(), quote.effectiveAmountIn);
-
-        // Mark nonce as used
-        nonces[quote.nonce] = true;
 
         // Execute the trade on the RFQ pool
         NativeRFQPool(payable(quote.pool)).fillOrder(quote);
@@ -274,7 +265,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
     ) internal returns (uint256 effectiveSellerTokenAmount) {
         if (msg.value > 0 && !multiHop) {
             require(sellerToken == address(0), ErrorsLib.UnexpectedMsgValue());
-            require(sellerTokenAmount <= msg.value, ErrorsLib.InvalidAmount());
+            require(sellerTokenAmount == msg.value, ErrorsLib.InvalidAmount());
 
             // slither-disable-next-line arbitrary-send-eth
             IWETH9(WETH9).deposit{value: sellerTokenAmount}();

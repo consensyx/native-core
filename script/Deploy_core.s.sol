@@ -45,8 +45,7 @@ contract DeployCoreScript is Script {
         console2.log("Router deployed at:", address(router));
 
         // 4. Deploy RFQ Pool
-        rfqPool = new NativeRFQPool(WETH, address(router), address(creditVault), "Native RFQ Pool");
-        rfqPool.setEnableCallback(true);
+        rfqPool = new NativeRFQPool(true, WETH, address(router), address(creditVault), "Native RFQ Pool");
 
         // 5 Set credit vault configuration
         creditVault.setCreditPool(address(rfqPool), true);

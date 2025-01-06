@@ -117,10 +117,9 @@ contract BaseTest is Test {
         router = new NativeRouter(address(creditVault), address(weth), deployer);
 
         // Deploy RFQ pool
-        rfqPool = new NativeRFQPool(address(weth), address(router), address(creditVault), "Native RFQ Pool");
+        rfqPool = new NativeRFQPool(true, address(weth), address(router), address(creditVault), "Native RFQ Pool");
 
         rfqPool.setSigner(deployer, true);
-        rfqPool.setEnableCallback(true);
 
         // Router set native pool
         router.setNativePool(address(rfqPool), true);
@@ -324,11 +323,12 @@ contract BaseTest is Test {
         deal(address(USDC), gsr, mintAmount);
 
         // Deploy RFQ pools for each PMM
-        haloRFQPool = new NativeRFQPool(address(weth), address(router), halo, "Halo RFQ Pool");
-        tokkaRFQPool = new NativeRFQPool(address(weth), address(router), tokka, "Tokka RFQ Pool");
-        quadraticRFQPool = new NativeRFQPool(address(weth), address(router), quadratic, "Quadratic RFQ Pool");
-        timeResearchRFQPool = new NativeRFQPool(address(weth), address(router), timeResearch, "TimeResearch RFQ Pool");
-        gsrRFQPool = new NativeRFQPool(address(weth), address(router), gsr, "GSR RFQ Pool");
+        haloRFQPool = new NativeRFQPool(false, address(weth), address(router), halo, "Halo RFQ Pool");
+        tokkaRFQPool = new NativeRFQPool(false, address(weth), address(router), tokka, "Tokka RFQ Pool");
+        quadraticRFQPool = new NativeRFQPool(false, address(weth), address(router), quadratic, "Quadratic RFQ Pool");
+        timeResearchRFQPool =
+            new NativeRFQPool(false, address(weth), address(router), timeResearch, "TimeResearch RFQ Pool");
+        gsrRFQPool = new NativeRFQPool(false, address(weth), address(router), gsr, "GSR RFQ Pool");
 
         // Configure each RFQ pool with their respective EOA signers
         haloRFQPool.setSigner(halo, true);

@@ -8,7 +8,6 @@ import {NativeLPToken} from "../../src/NativeLPToken.sol";
 import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 
 contract NativeLPTokenERC20Test is BaseTest {
-    uint256 constant EIGHT_HOURS = 8 * 60 * 60;
     uint256 constant INITIAL_DEPOSIT = 1000e6; // 1000 USDC
     uint256 constant MIN_DEPOSIT = 1e6; // 1 USDC
 
@@ -20,7 +19,8 @@ contract NativeLPTokenERC20Test is BaseTest {
         carol = makeAddr("carol");
 
         vm.startPrank(deployer);
-        lpUSDC.setMinRedeemInterval(EIGHT_HOURS);
+        // Set min redeem interval to 0 to avoid transfer in cooldown period
+        lpUSDC.setMinRedeemInterval(0);
         lpUSDC.setMinDeposit(MIN_DEPOSIT); // Set min deposit to 1 USDC
         vm.stopPrank();
 
@@ -112,8 +112,10 @@ contract NativeLPTokenERC20Test is BaseTest {
 
     function test_transfer_pausedState() public {
         // Pause the contract
-        vm.prank(deployer);
-        lpUSDC.pause();
+        vm.startPrank(deployer);
+        lpUSDC.pauseDeposit();
+        lpUSDC.pauseRedeem();
+        vm.stopPrank();
 
         // Transfers should still work when paused
         vm.startPrank(alice);
