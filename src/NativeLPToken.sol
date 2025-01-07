@@ -58,8 +58,8 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient {
     /// @notice Mapping of user addresses to their last deposit timestamp
     mapping(address => uint256) public lastDepositTimestamp;
 
-    /// @notice Mapping of addresses to their whitelist status for cooldown bypass
-    mapping(address => bool) public cooldownWhitelist;
+    /// @notice Mapping of addresses to their whitelist status for cooldown and early withdraw bypass
+    mapping(address => bool) public whitelist;
 
     /*//////////////////////////////////////////////////////////////////////////
                                         EVENTS
@@ -166,7 +166,10 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient {
         // Calculate underlying amount
         underlyingAmount = (sharesToBurn * totalUnderlying) / totalShares;
 
-        if (block.timestamp < lastDepositTimestamp[msg.sender] + minRedeemInterval && earlyWithdrawFeeBips > 0) {
+        if (
+            block.timestamp < lastDepositTimestamp[msg.sender] + minRedeemInterval && earlyWithdrawFeeBips > 0
+                && !whitelist[msg.sender]
+        ) {
             underlyingAmount -= (underlyingAmount * earlyWithdrawFeeBips) / 10_000;
         }
 
@@ -282,13 +285,13 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient {
         emit EarlyWithdrawFeeBipsUpdated(oldFeeBips, _earlyWithdrawFeeBips);
     }
 
-    /// @notice Sets the whitelist status for an address to bypass cooldown
+    /// @notice Sets the whitelist status for an address to bypass cooldown and early withdraw
     /// @param account The address to update
     /// @param status The new whitelist status
     function setWhitelist(address account, bool status) external onlyOwner {
         require(account != address(0), ErrorsLib.ZeroAddress());
 
-        cooldownWhitelist[account] = status;
+        whitelist[account] = status;
         emit WhitelistUpdated(account, status);
     }
 
@@ -367,7 +370,7 @@ contract NativeLPToken is ERC20, Ownable, ReentrancyGuardTransient {
     function _transfer(address from, address to, uint256 amount) internal override {
         // During cooldown period, user can't transfer shares, but can still redeem
         require(
-            lastDepositTimestamp[from] + minRedeemInterval <= block.timestamp || cooldownWhitelist[from],
+            lastDepositTimestamp[from] + minRedeemInterval <= block.timestamp || whitelist[from],
             ErrorsLib.TransferInCooldown()
         );
 

@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Pausable} from "@openzeppelin/contracts/security/Pausable.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ISignatureTransfer} from "@permit2/interfaces/ISignatureTransfer.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -23,7 +24,7 @@ import {CreditVault} from "./CreditVault.sol";
 import {NativeRFQPool} from "./NativeRFQPool.sol";
 import {ExternalSwap} from "./libraries/ExternalSwap.sol";
 
-contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransient, Multicall {
+contract NativeRouter is INativeRouter, EIP712, Ownable, Pausable, Multicall, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
@@ -72,7 +73,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
 
     /// @notice Execute a Request for Quote (RFQ) trade based on market maker's signed quote
     /// @dev This function facilitates trades between swappers and Native's partnered market makers:
-    function tradeRFQT(RFQTQuote memory quote) external payable override nonReentrant {
+    function tradeRFQT(RFQTQuote memory quote) external payable override nonReentrant whenNotPaused {
         require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
         require(block.timestamp <= quote.deadlineTimestamp, ErrorsLib.QuoteExpired());
 
@@ -123,7 +124,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
         PermitQuote memory quote,
         ISignatureTransfer.PermitTransferFrom calldata swapperPermit,
         bytes calldata swapperSig
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         // Validate widget fee rate
         require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
         require(
@@ -249,6 +250,16 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
         emit NativePoolUpdated(pool, isActive);
     }
 
+    /// @notice Pauses all RFQ and fillOrder operations
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Unpauses all RFQ and fillOrder operations
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
     /*//////////////////////////////////////////////////////////////////////////
                                      INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
@@ -344,7 +355,9 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, ReentrancyGuardTransien
                     quote.tokenOut,
                     quote.amountIn,
                     quote.amountOut,
-                    quote.deadline
+                    quote.deadline,
+                    quote.widgetFee.feeRecipient,
+                    quote.widgetFee.feeRate
                 )
             )
         );

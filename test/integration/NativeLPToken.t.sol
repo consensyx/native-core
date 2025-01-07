@@ -741,7 +741,7 @@ contract NativeLPTokenTest is BaseTest {
         assertEq(lpUSDC.shares(bob), lpUSDC.getSharesByUnderlying(transferAmount), "Bob's received shares incorrect");
     }
 
-    function test_transfer_cooldownWhitelist() public {
+    function test_transfer_whitelist() public {
         // Setup - first deposit
         uint256 depositAmount = 100_000_000; // 100 USDC
         vm.startPrank(alice);
@@ -762,7 +762,7 @@ contract NativeLPTokenTest is BaseTest {
         vm.stopPrank();
 
         // Verify alice is whitelisted
-        assertTrue(lpUSDC.cooldownWhitelist(alice), "Alice should be whitelisted");
+        assertTrue(lpUSDC.whitelist(alice), "Alice should be whitelisted");
 
         // Transfer should now succeed even in cooldown period
         vm.startPrank(alice);
@@ -783,7 +783,7 @@ contract NativeLPTokenTest is BaseTest {
         vm.stopPrank();
 
         // Verify alice is no longer whitelisted
-        assertFalse(lpUSDC.cooldownWhitelist(alice), "Alice should not be whitelisted");
+        assertFalse(lpUSDC.whitelist(alice), "Alice should not be whitelisted");
 
         // Try to transfer again (should fail as no longer whitelisted)
         vm.startPrank(alice);

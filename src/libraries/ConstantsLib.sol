@@ -35,5 +35,5 @@ bytes32 constant RFQ_QUOTE_WIDGET_SIGNATURE_HASH =
 
 /// @dev The EIP-712 typeHash for Fill Order Authorization.
 bytes32 constant FILL_ORDER_SIGNATURE_HASH = keccak256(
-    "fillOrder(uint256 nonce,address recipient,address tokenIn,address tokenOut,uint256 amountIn,uint256 amountOut,uint256 deadline)"
+    "fillOrder(uint256 nonce,address recipient,address tokenIn,address tokenOut,uint256 amountIn,uint256 amountOut,uint256 deadline,address widgetFeeRecipient,uint256 widgetFeeRate)"
 );
