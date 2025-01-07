@@ -197,17 +197,22 @@ contract NativeRouter is INativeRouter, EIP712, Ownable, Pausable, Multicall, Re
         emit RefundERC20(token, recipient, amount);
     }
 
-    /// @notice Emergency function to unwrap WETH9 stuck in the contract
-    /// @dev Can only be called by contract owner in emergency situations
+    /// @notice Unwraps WETH9 to ETH by transferring WETH from the caller to this contract and then unwrapping it
+    /// @dev This function is permissionless and can be used in multicall with tradeRFQ or fillOrder to instantly unwrap received WETH
+    /// @dev The function follows these steps:
+    ///      1. Transfers WETH from msg.sender to this contract
+    ///      2. Unwraps WETH to ETH
+    ///      3. Transfers the resulting ETH to the specified recipient
     /// @param amount The amount of WETH9 to unwrap
-    /// @param recipient The address to receive the unwrapped ETH
-    function unwrapWETH9(uint256 amount, address recipient) public payable onlyOwner nonReentrant {
-        require(amount > 0 && IWETH9(WETH9).balanceOf(address(this)) >= amount, ErrorsLib.InvalidWETH9Amount());
+    /// @param recipient The address that will receive the unwrapped ETH
+    function unwrapWETH9(uint256 amount, address recipient) public payable nonReentrant {
+        require(amount > 0, ErrorsLib.ZeroAmount());
+        TransferHelper.safeTransfer(WETH9, address(this), amount);
 
-        uint256 beforeETHBalance = address(this).balance;
+        uint256 beforeBalance = address(this).balance;
         IWETH9(WETH9).withdraw(amount);
 
-        amount = address(this).balance - beforeETHBalance;
+        amount = address(this).balance - beforeBalance;
 
         TransferHelper.safeTransferETH(recipient, amount);
 
