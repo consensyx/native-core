@@ -160,4 +160,7 @@ interface ICreditVault {
 
     /// @notice Emitted when fee withdrawer is set
     event FeeWithdrawerSet(address feeWithdrawer);
+
+    /// @notice Emitted when reserve fees are withdrawn
+    event ReserveWithdrawn(address underlying, address recipient, uint256 amount);
 }

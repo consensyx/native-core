@@ -56,6 +56,9 @@ library ErrorsLib {
     /// @notice Thrown when LP token address is invalid
     error InvalidLPToken();
 
+    /// @notice Thrown when underlying are not supported in the credit vault
+    error InvalidUnderlying();
+
     /// @notice Thrown when market (LP token) is invalid
     error InvalidMarket();
 

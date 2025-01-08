@@ -105,6 +105,10 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step, ReentrancyGuardTrans
         int256 amountOut
     ) external {
         require(creditPools[msg.sender], ErrorsLib.OnlyCreditPool());
+        require(
+            address(lpTokens[tokenIn]) != address(0) && address(lpTokens[tokenOut]) != address(0),
+            ErrorsLib.InvalidUnderlying()
+        );
 
         positions[trader][tokenIn] += amountIn;
         positions[trader][tokenOut] -= amountOut;
@@ -131,6 +135,9 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step, ReentrancyGuardTrans
                 address token = accruedFees[i].feeUpdates[j].token;
                 uint256 fundingFee = accruedFees[i].feeUpdates[j].fundingFee;
                 uint256 reserveFee = accruedFees[i].feeUpdates[j].reserveFee;
+
+                // Check if the underlying token is supported
+                require(address(lpTokens[token]) != address(0), ErrorsLib.InvalidUnderlying());
 
                 if (fundingFee > 0) {
                     uint256 beforeExchangeRate = lpTokens[token].exchangeRate();
@@ -342,7 +349,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step, ReentrancyGuardTrans
         // Update storage
         lpTokens[underlying] = lpToken;
         supportedMarkets[address(lpToken)] = true;
-        allLPTokens.push(NativeLPToken(lpToken));
+        allLPTokens.push(lpToken);
 
         emit MarketListed(address(lpToken));
     }
@@ -353,6 +360,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step, ReentrancyGuardTrans
     /// @param recipient The address that will receive the fees
     /// @param amount The amount of fees to withdraw
     function withdrawReserve(address underlying, address recipient, uint256 amount) external {
+        require(recipient != address(0), ErrorsLib.ZeroAddress());
         require(msg.sender == feeWithdrawer, ErrorsLib.OnlyFeeWithdrawer());
         require(amount <= reserveFees[underlying], ErrorsLib.InsufficientFundingFees());
 
@@ -360,6 +368,8 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step, ReentrancyGuardTrans
 
         // Withdraw underlying from vault
         IERC20(underlying).safeTransfer(recipient, amount);
+
+        emit ReserveWithdrawn(underlying, recipient, amount);
     }
 
     /// @notice Updates credit pool status
@@ -380,7 +390,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step, ReentrancyGuardTrans
     /// @param pool Address of native pool to receive approval
     function setAllowance(TokenAmountUint[] calldata tokens, address pool) external onlyOwner {
         for (uint256 i; i < tokens.length; ++i) {
-            require(tokens[i].token != address(0), ErrorsLib.ZeroAddress());
+            require(address(lpTokens[tokens[i].token]) != address(0), ErrorsLib.InvalidUnderlying());
 
             IERC20(tokens[i].token).safeApprove(pool, tokens[i].amount);
         }

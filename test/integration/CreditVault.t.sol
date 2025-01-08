@@ -348,7 +348,7 @@ contract CreditVaultTest is BaseTest {
         tokensWithZeroAddress[0] = ICreditVault.TokenAmountUint({token: address(0), amount: 1000});
 
         vm.startPrank(deployer);
-        vm.expectRevert(ErrorsLib.ZeroAddress.selector);
+        vm.expectRevert(ErrorsLib.InvalidUnderlying.selector);
         creditVault.setAllowance(tokensWithZeroAddress, address(newRFQPool));
         vm.stopPrank();
 

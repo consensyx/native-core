@@ -29,7 +29,6 @@ contract NativeRFQPoolTest is BaseTest {
         rfqPool2 = new NativeRFQPool(true, address(weth), address(router2), address(creditVault), "RFQPool2");
 
         rfqPool2.setSigner(deployer, true);
-        rfqPool2.setSigner(halo, true);
 
         router2.setNativePool(address(rfqPool2), true);
 

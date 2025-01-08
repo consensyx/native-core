@@ -153,8 +153,9 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
 
     /// @notice Updates the treasury address that receives token
     /// @param newTreasury The new treasury address
-    /// @dev Only callable by owner
     function setTreasury(address newTreasury) public onlyOwner {
+        require(newTreasury != address(0), ErrorsLib.ZeroAddress());
+
         treasury = newTreasury;
         emit TreasurySet(newTreasury);
     }
@@ -162,8 +163,9 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     /// @notice Adds or removes a market maker's authorization to sign quotes
     /// @param signer The market maker's address
     /// @param _isSigner True to authorize, false to revoke
-    /// @dev Only callable by owner
     function setSigner(address signer, bool _isSigner) external onlyOwner {
+        require(signer != address(0), ErrorsLib.ZeroAddress());
+
         isSigner[signer] = _isSigner;
         emit SignerUpdated(signer, _isSigner);
     }
