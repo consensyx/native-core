@@ -269,7 +269,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step, ReentrancyGuardTrans
                 IERC20(token).safeTransferFrom(msg.sender, address(this), amount.toUint256());
             } else {
                 /// Enforce rebalance cap before underlying token leave vault
-                _updateRebalanceCap(request.trader, token, (-amount).toUint256());
+                _updateRebalanceCap(msg.sender, token, (-amount).toUint256());
 
                 IERC20(token).safeTransfer(recipient, (-amount).toUint256());
             }
@@ -279,7 +279,7 @@ contract CreditVault is ICreditVault, EIP712, Ownable2Step, ReentrancyGuardTrans
             address token = request.claimCollaterals[i].token;
 
             /// Enforce rebalance cap before collateral token leave vault
-            _updateRebalanceCap(request.trader, token, request.claimCollaterals[i].amount);
+            _updateRebalanceCap(msg.sender, token, request.claimCollaterals[i].amount);
 
             IERC20(token).safeTransfer(recipient, request.claimCollaterals[i].amount);
         }
