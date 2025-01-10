@@ -91,14 +91,18 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         // Mark nonce as used
         nonces[quote.nonce] = true;
 
-        // Handle ETH case: convert null address to WETH9 for seller token
-        // buyerToken is validated in router and cannot be address(0)
+        // Store original buyerToken address to handle ETH unwrapping if buyerToken is zero address
+        address originalBuyerToken = quote.buyerToken;
+
+        // Handle ETH case: convert zero address to WETH9 for buyer or seller token
+        quote.buyerToken = quote.buyerToken == address(0) ? WETH9 : quote.buyerToken;
         quote.sellerToken = quote.sellerToken == address(0) ? WETH9 : quote.sellerToken;
 
         uint256 buyerTokenAmount = _transferAndCallback(
             quote.signer,
             quote.recipient,
             quote.buyerToken,
+            originalBuyerToken,
             quote.sellerToken,
             quote.buyerTokenAmount,
             quote.sellerTokenAmount,
@@ -122,10 +126,18 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         // Prevent replay attacks
         require(!nonces[quote.nonce], ErrorsLib.NonceUsed());
 
+        // Store original tokenOut address to handle ETH unwrapping if tokenOut is zero address
+        address originalTokenOut = quote.tokenOut;
+
+        // Handle ETH case: convert zero address to WETH9 for buyer or seller token
+        quote.tokenOut = quote.tokenOut == address(0) ? WETH9 : quote.tokenOut;
+        quote.tokenIn = quote.tokenIn == address(0) ? WETH9 : quote.tokenIn;
+
         uint256 tokenOutAmount = _transferAndCallback(
             quote.marketMaker,
             quote.recipient,
             quote.tokenOut,
+            originalTokenOut,
             quote.tokenIn,
             quote.amountOut,
             quote.amountIn,
@@ -178,6 +190,7 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         address signer,
         address recipient,
         address buyerToken,
+        address originalBuyerToken,
         address sellerToken,
         uint256 buyerTokenAmount,
         uint256 sellerTokenAmount,
@@ -199,7 +212,7 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             );
         }
 
-        _transferFromTreasury(buyerToken, recipient, _buyerTokenAmount);
+        _transferFromTreasury(originalBuyerToken, recipient, _buyerTokenAmount);
     }
 
     /// @dev Helper function to transfer buyerToken from external account.
