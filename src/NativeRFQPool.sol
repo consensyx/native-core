@@ -85,9 +85,6 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         // Prevent replay attacks
         require(!nonces[quote.nonce], ErrorsLib.NonceUsed());
 
-        // Verify market maker signature
-        _verifyPMMSignature(quote);
-
         // Mark nonce as used
         nonces[quote.nonce] = true;
 
@@ -97,6 +94,9 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         // Handle ETH case: convert zero address to WETH9 for buyer or seller token
         quote.buyerToken = quote.buyerToken == address(0) ? WETH9 : quote.buyerToken;
         quote.sellerToken = quote.sellerToken == address(0) ? WETH9 : quote.sellerToken;
+
+        // Verify market maker signature
+        _verifyPMMSignature(quote);
 
         uint256 buyerTokenAmount = _transferAndCallback(
             quote.signer,
