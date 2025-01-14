@@ -1,60 +1,58 @@
 # Native v2 Core
 
-## What's new in v2
+Native is an `intents-based`, `chain-abstraction` liquidity infrastructure that transforms the traditional inventory-based trading paradigm into a credit-based system.
 
-### Remove Compound Code
+## How Native V2 Core Works
 
-The V1 code was overly bloated, inheriting too much unnecessary code from `Compound`
+When users want to swap token X for token Y, their options are typically limited to either CEX or AMM exchanges like Uniswap. With AMMs, users often face slippage losses, especially when trading tokens with insufficient liquidity.
 
-### Remove Upgradeable Model
- 
-We discarded `upgradeable` model and continue using `non-upgradeable` model, we believe this is more safer
+To address this challenge, Native supports three quoting mechanisms:
 
-### New LP Token 
+1. RFQ Mode: Native's partnered market makers provide firm, zero-slippage quotes
+2. Traditional AMM quotes: Routing through protocols like `Uniswap` or `1inch`
 
-LP token is a `yield-bearing` token, similar to `Lido`'s `stETH`
+Native automatically selects the better quote for the swapper.
 
-### Auto-sign
+## Credit Margin Engine
 
-which is built on the `RFQ` (Request for Quote)
+While Native may appear to be a traditional RFQ system, it goes beyond by supporting a transition from `inventory-based` to `credit-based` trading.
 
-`RFQ Mechanism`
+For example: 
 
-1. The swapper submits a price inquiry request to the Native API.
-2. The Native backend forwards this inquiry to a partner private market maker (`PMM`).
-3. The PMM returns a signed quote.
-4. The Native backend builds all information into `calldata` and sends it back to the swapper.
-5. The swapper invokes the NativeRouter contract to complete the trade.
+If Alice wants to sell 10 ETH at 3000 USDC each to a market maker, traditional inventory-based systems would require the market maker to hold 30,000 USDC. However, with Native's credit-based system, market makers can borrow assets from Native's credit vault contract (subject to their credit limit). Market makers only need to pay borrowing fees after a certain period (rates reference perpetual DEX funding rates).
 
- `Auto-sign Mechanism`
+Market makers can choose to operate purely on the credit-based model or utilize both modes simultaneously, significantly improving capital efficiency.
 
- 1. Market makers actively push their signed order books to the Native backend.
- 2. The Native backend uses this order book to match and complete transactions directly based on the swapper's trade request.
+## Repository Structure
 
- `Benefits for Auto-sign`
- 1. The swapper's trade request interacts solely with the Native API.
- 3. This streamlined process significantly reduces transaction latency and improve the success rate
+[`NativeLPToken.sol`](./src/NativeLPToken.sol) is a yield-bearing token. Each underlying asset corresponds to a unique LP token contract. LP investors can deposit assets through this contract, but unlike traditional ERC20 tokens, deposited assets are transferred to the `CreditVault` contract instead of remaining in the LP token contract.
 
-### Funding rate Fee
+The yield for NativeLPToken comes from borrowing fees generated when market makers utilize funds from the credit vault.
 
-The `V1` LP token was based on Compound's `cToken`, accruing borrow fees as interest. To streamline the contract, we removed unnecessary Compound code.
+[`CreditVault.sol`](./src/CreditVault.sol) is Native's core contract holding most assets. All market maker swaps using credit vault assets are executed through this contract.
 
-In `V2`, market makers borrow LP token assets from the `Credit Vault` for quotes, with a funding rate mechanism replacing automatic interest. The funding fee rate updates every 8 hours. Timely repayment incurs no fee; otherwise, the fee is distributed to LP holders via the `distributeYield` interface.
+Example: When Alice sells one ETH at 3000 USDC/ETH, and Halo (market maker) trades using the credit vault, the position changes are reflected as:
 
+```solidity
+position[halo][ETH] += 1;
+position[halo][USDC] -= 3000;
+```
 
-Due to the need for `compatibility` with V1's existing interface, the RFQ trading logic and data structure remain largely unchanged.
+The CreditVault contract provides key functions:
+* `settle`: Market makers can close positions
+* `repay`: Market makers can repay borrowed assets
+* `addCollateral`: Market makers can provide NativeLPToken as collateral
+* `removeCollateral`: Market makers can reduce collateral
+* `liquidation`: Trusted liquidators can liquidate underwater market maker positions
 
-## Architecture
+[`NativeRouter.sol`](./src/NativeRouter.sol) serves as the sole entry point for on-chain interactions between swappers and Native, similar to other DeFi router contracts. Users execute trades by calling the Router contract with Native-provided `calldata` containing market maker-signed quote signatures.
 
-Native `V2` still follows the Native `V1` architecture, with slight differences in the `Auto-sign` flow. For details, you can refer to the the Auto-sign section above.
+[`NativeRFQPool.sol`](./src/NativeRFQPool.sol) is a supporting contract. Native supports two pool types:
 
-# WIP
+1. `CreditPool`: Uses CreditVault as treasury, handling trades through the credit vault contract
+2. `Inventory Pool`: Uses market maker's EOA account as treasury for direct asset exchange
 
-* more documentation 
-* gas optimization
-* more `foundry`invariant test 
-* `echina `(property-based) test
-* formal verification `certora`
+Both pools use the `NativeRFQPool` template contract, primarily differing in their `treasury` address.
 
 ## Usage
 
