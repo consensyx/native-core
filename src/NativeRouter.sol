@@ -2,10 +2,10 @@
 pragma solidity 0.8.28;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Pausable} from "@openzeppelin/contracts/security/Pausable.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ISignatureTransfer} from "@permit2/interfaces/ISignatureTransfer.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {EIP712, ECDSA} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
@@ -24,7 +24,7 @@ import {CreditVault} from "./CreditVault.sol";
 import {NativeRFQPool} from "./NativeRFQPool.sol";
 import {ExternalSwap} from "./libraries/ExternalSwap.sol";
 
-contract NativeRouter is INativeRouter, EIP712, Ownable, Pausable, Multicall, ReentrancyGuardTransient {
+contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multicall, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
