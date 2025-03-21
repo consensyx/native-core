@@ -17,6 +17,7 @@ contract DeployCoreScript is Script {
         address epochUpdater = vm.envAddress("EPOCH_UPDATER");
         address operator = vm.envAddress("OPERATOR");
         address widgetSigner = vm.envAddress("WIDGET_SIGNER");
+        address feeWithdrawer = vm.envAddress("FEE_WITHDRAWER");
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -43,7 +44,7 @@ contract DeployCoreScript is Script {
         creditVault.setCreditPool(address(rfqPool), true);
         creditVault.setSigner(operator);
         creditVault.setEpochUpdater(epochUpdater);
-        creditVault.setFeeWithdrawer(payable(deployer));
+        creditVault.setFeeWithdrawer(payable(feeWithdrawer));
 
         // 6. Set router configuration
         router.setSigner(widgetSigner, true);
