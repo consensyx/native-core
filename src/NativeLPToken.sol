@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {IERC20Metadata as IERC20} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import "./libraries/ConstantsLib.sol";
 import {CreditVault} from "./CreditVault.sol";
@@ -15,7 +15,7 @@ import {ReentrancyGuardTransient} from "./libraries/ReentrancyGuardTransient.sol
 /// @notice A token contract that represents liquidity provider positions and distributes yield
 /// @dev This contract manages LP shares and underlying assets, accruing yield based on protocol revenue
 contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
-    using SafeERC20 for IERC20Metadata;
+    using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////////////////
                                      STATE VARIABLES
@@ -28,7 +28,7 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
     bool public redeemPaused;
 
     /// @notice The underlying token that this LP token represents
-    IERC20Metadata public underlying;
+    IERC20 public underlying;
 
     /// @notice The address of the credit vault contract
     address public creditVault;
@@ -61,6 +61,9 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
     /// @notice Mapping of addresses to their whitelist status for cooldown and early withdraw bypass
     mapping(address => bool) public whitelist;
 
+    /// @notice Mapping of addresses authorized to act as deposit delegators
+    mapping(address => bool) public depositDelegators;
+
     /*//////////////////////////////////////////////////////////////////////////
                                         EVENTS
     //////////////////////////////////////////////////////////////////////////*/
@@ -87,10 +90,10 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
     event TransferShares(address indexed from, address indexed to, uint256 shares);
 
     /// @notice Event emitted when new shares are minted
-    event SharesMinted(address indexed user, uint256 shares, uint256 underlyingAmount);
+    event SharesMinted(address indexed from, address indexed to, uint256 shares, uint256 underlyingAmount);
 
     /// @notice Event emitted when shares are burned
-    event SharesBurned(address indexed user, uint256 shares, uint256 underlyingAmount);
+    event SharesBurned(address indexed from, address indexed to, uint256 shares, uint256 underlyingAmount);
 
     /// @notice Event emitted when minimum deposit amount is updated
     event MinDepositUpdated(uint256 oldAmount, uint256 newAmount);
@@ -100,6 +103,9 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
 
     /// @notice Event emitted when an address's whitelist status is updated
     event WhitelistUpdated(address indexed account, bool status);
+
+    /// @notice Event emitted when deposit delegation is updated
+    event DepositDelegatorUpdated(address indexed account, bool status);
 
     /*//////////////////////////////////////////////////////////////////////////
                                      CONSTRUCTOR
@@ -111,10 +117,10 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         address _underlying,
         address _creditVault
     ) ERC20(_name, _symbol) {
-        underlying = IERC20Metadata(_underlying);
+        underlying = IERC20(_underlying);
         creditVault = _creditVault;
 
-        _decimals = IERC20Metadata(address(underlying)).decimals();
+        _decimals = IERC20(address(underlying)).decimals();
     }
 
     /// @notice Deposit underlying tokens to mint LP tokens
@@ -126,29 +132,34 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         whenNotPaused(depositPaused)
         returns (uint256 sharesToMint)
     {
-        require(amount >= minDeposit && amount > 0, ErrorsLib.BelowMinimumDeposit());
+        sharesToMint = _deposit(msg.sender, msg.sender, amount);
+    }
 
-        // Transfer underlying to vault
-        uint256 balanceBefore = underlying.balanceOf(creditVault);
-        underlying.safeTransferFrom(msg.sender, creditVault, amount);
-        amount = underlying.balanceOf(creditVault) - balanceBefore;
+    /// @notice Deposit underlying tokens on behalf of another address
+    /// @param to The address to mint shares to
+    /// @param amount Amount of underlying tokens to deposit
+    /// @return sharesToMint Amount of LP tokens minted
+    function depositFor(
+        address to,
+        uint256 amount
+    ) external nonReentrant whenNotPaused(depositPaused) returns (uint256 sharesToMint) {
+        require(to != address(0), ErrorsLib.ZeroAddress());
+        sharesToMint = _deposit(msg.sender, to, amount);
+    }
 
-        // Calculate shares to mint
-        if (totalShares == 0) {
-            sharesToMint = amount; // Initial shares 1:1
-        } else {
-            sharesToMint = (amount * totalShares) / totalUnderlying;
-        }
-
-        // Mint shares
-        _mintShares(msg.sender, sharesToMint);
-
-        // Update total underlying
-        totalUnderlying += amount;
-
-        lastDepositTimestamp[msg.sender] = block.timestamp;
-
-        emit SharesMinted(msg.sender, sharesToMint, amount);
+    /// @notice Deposit underlying tokens from another contract
+    /// @param from The address to transfer underlying tokens from
+    /// @param to The address to mint shares to
+    /// @param amount Amount of underlying tokens to deposit
+    /// @return sharesToMint Amount of LP tokens minted
+    function depositFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) external nonReentrant whenNotPaused(depositPaused) returns (uint256 sharesToMint) {
+        require(from != address(0) && to != address(0), ErrorsLib.ZeroAddress());
+        require(depositDelegators[msg.sender], ErrorsLib.NotDepositDelegator());
+        sharesToMint = _deposit(from, to, amount);
     }
 
     /// @notice Redeem LP tokens for underlying tokens
@@ -160,31 +171,30 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         whenNotPaused(redeemPaused)
         returns (uint256 underlyingAmount)
     {
-        require(sharesToBurn > 0, ErrorsLib.ZeroAmount());
-        require(shares[msg.sender] >= sharesToBurn, ErrorsLib.InsufficientShares());
+        underlyingAmount = _redeem(sharesToBurn, msg.sender);
+    }
 
-        // Calculate underlying amount
-        underlyingAmount = (sharesToBurn * totalUnderlying) / totalShares;
+    /// @notice Redeem LP tokens and send underlying tokens to a specified address
+    /// @param sharesToBurn Amount of LP tokens to burn from caller's balance
+    /// @param to Address that will receive the underlying tokens
+    /// @return underlyingAmount Amount of underlying tokens sent to the recipient
+    function redeemTo(
+        uint256 sharesToBurn,
+        address to
+    ) external nonReentrant whenNotPaused(redeemPaused) returns (uint256 underlyingAmount) {
+        require(to != address(0), ErrorsLib.ZeroAddress());
+        underlyingAmount = _redeem(sharesToBurn, to);
+    }
 
-        if (
-            block.timestamp < lastDepositTimestamp[msg.sender] + minRedeemInterval && earlyWithdrawFeeBips > 0
-                && !whitelist[msg.sender]
-        ) {
-            underlyingAmount -= (underlyingAmount * earlyWithdrawFeeBips) / 10_000;
-        }
-
-        // Burn shares first
-        _burnShares(msg.sender, sharesToBurn);
-
-        // Transfer underlying from vault to msg.sender
-        uint256 balanceBefore = underlying.balanceOf(creditVault);
-        CreditVault(creditVault).pay(msg.sender, underlyingAmount);
-        underlyingAmount = balanceBefore - underlying.balanceOf(creditVault);
-
-        // Update total underlying
-        totalUnderlying -= underlyingAmount;
-
-        emit SharesBurned(msg.sender, sharesToBurn, underlyingAmount);
+    /// @notice Transfers shares from sender to recipient
+    /// @param recipient The address to transfer shares to
+    /// @param sharesAmount The number of shares to transfer
+    /// @return The amount of underlying tokens the shares represent
+    function transferShares(address recipient, uint256 sharesAmount) external returns (uint256) {
+        _transferShares(msg.sender, recipient, sharesAmount);
+        uint256 tokensAmount = getUnderlyingByShares(sharesAmount);
+        _emitTransferEvents(msg.sender, recipient, tokensAmount, sharesAmount);
+        return tokensAmount;
     }
 
     /// @notice Distributes yield to LP token holders
@@ -295,6 +305,17 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         emit WhitelistUpdated(account, status);
     }
 
+    /// @notice Sets the deposit delegator status for an address
+    /// @param account The address to update
+    /// @param status The new delegate status
+    /// @dev Can only be called by the owner
+    function setDepositDelegator(address account, bool status) external onlyOwner {
+        require(account != address(0), ErrorsLib.ZeroAddress());
+
+        depositDelegators[account] = status;
+        emit DepositDelegatorUpdated(account, status);
+    }
+
     /*//////////////////////////////////////////////////////////////////////////
                                      PAUSE OPERATIONS
     //////////////////////////////////////////////////////////////////////////*/
@@ -334,6 +355,60 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
                                 INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
+    function _deposit(address from, address to, uint256 amount) internal returns (uint256 sharesToMint) {
+        require(amount >= minDeposit && amount > 0, ErrorsLib.BelowMinimumDeposit());
+
+        // Transfer underlying to vault
+        uint256 balanceBefore = underlying.balanceOf(creditVault);
+        underlying.safeTransferFrom(from, creditVault, amount);
+        amount = underlying.balanceOf(creditVault) - balanceBefore;
+
+        // Calculate shares to mint
+        if (totalShares == 0) {
+            sharesToMint = amount; // Initial shares 1:1
+        } else {
+            sharesToMint = (amount * totalShares) / totalUnderlying;
+        }
+
+        // Mint shares
+        _mintShares(to, sharesToMint);
+
+        // Update total underlying
+        totalUnderlying += amount;
+
+        lastDepositTimestamp[to] = block.timestamp;
+
+        emit SharesMinted(from, to, sharesToMint, amount);
+    }
+
+    function _redeem(uint256 sharesToBurn, address to) internal returns (uint256 underlyingAmount) {
+        require(sharesToBurn > 0, ErrorsLib.ZeroAmount());
+        require(shares[msg.sender] >= sharesToBurn, ErrorsLib.InsufficientShares());
+
+        // Calculate underlying amount
+        underlyingAmount = (sharesToBurn * totalUnderlying) / totalShares;
+
+        if (
+            block.timestamp < lastDepositTimestamp[msg.sender] + minRedeemInterval && earlyWithdrawFeeBips > 0
+                && !whitelist[msg.sender]
+        ) {
+            underlyingAmount -= (underlyingAmount * earlyWithdrawFeeBips) / 10_000;
+        }
+
+        // Burn shares first
+        _burnShares(msg.sender, sharesToBurn);
+
+        // Transfer underlying from vault to msg.sender
+        uint256 balanceBefore = underlying.balanceOf(creditVault);
+        CreditVault(creditVault).pay(to, underlyingAmount);
+        underlyingAmount = balanceBefore - underlying.balanceOf(creditVault);
+
+        // Update total underlying
+        totalUnderlying -= underlyingAmount;
+
+        emit SharesBurned(msg.sender, to, sharesToBurn, underlyingAmount);
+    }
+
     function _mintShares(address to, uint256 shareAmount) internal {
         require(shareAmount > 0, ErrorsLib.ZeroAmount());
         require(to != address(0), ErrorsLib.ZeroAddress());
@@ -350,16 +425,6 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         totalShares -= shareAmount;
     }
 
-    function _transferShares(address from, address to, uint256 _shares) internal {
-        require(from != address(0) && to != address(0), ErrorsLib.ZeroAddress());
-        require(from != to, ErrorsLib.TransferSelf());
-        require(to != address(this), ErrorsLib.TransferToContract());
-        require(_shares <= shares[from], ErrorsLib.InsufficientShares());
-
-        shares[from] -= _shares;
-        shares[to] += _shares;
-    }
-
     /// @notice Override ERC20's _transfer to handle yield-bearing LP token transfers
     /// @dev Since this is a yield-bearing token, the actual transfer is done by transferring shares
     ///      rather than token amounts directly. The shares represent the user's proportion of the
@@ -368,15 +433,32 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
     /// @param to The address to transfer to
     /// @param amount The underlying token amount to transfer
     function _transfer(address from, address to, uint256 amount) internal override {
-        // During cooldown period, user can't transfer shares, but can still redeem
-        require(
-            lastDepositTimestamp[from] + minRedeemInterval <= block.timestamp || whitelist[from],
-            ErrorsLib.TransferInCooldown()
-        );
-
         uint256 sharesToTransfer = getSharesByUnderlying(amount);
         _transferShares(from, to, sharesToTransfer);
-        emit Transfer(from, to, amount);
-        emit TransferShares(from, to, sharesToTransfer);
+        _emitTransferEvents(from, to, amount, sharesToTransfer);
+    }
+
+    function _transferShares(address from, address to, uint256 _shares) internal {
+        require(from != address(0) && to != address(0), ErrorsLib.ZeroAddress());
+        require(from != to, ErrorsLib.TransferSelf());
+        require(to != address(this), ErrorsLib.TransferToContract());
+
+        _validateTransferCooldown(from);
+
+        shares[from] -= _shares;
+        shares[to] += _shares;
+    }
+
+    function _validateTransferCooldown(address user) internal view {
+        // During cooldown period, user can't transfer shares, but can still redeem
+        require(
+            lastDepositTimestamp[user] + minRedeemInterval <= block.timestamp || whitelist[user],
+            ErrorsLib.TransferInCooldown()
+        );
+    }
+
+    function _emitTransferEvents(address from, address to, uint256 tokenAmount, uint256 sharesAmount) internal {
+        emit Transfer(from, to, tokenAmount);
+        emit TransferShares(from, to, sharesAmount);
     }
 }

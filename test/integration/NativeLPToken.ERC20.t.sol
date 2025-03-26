@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {stdError} from "forge-std/StdError.sol";
 
 import {BaseTest} from "../BaseTest.t.sol";
 import {NativeLPToken} from "../../src/NativeLPToken.sol";
@@ -84,7 +85,7 @@ contract NativeLPTokenERC20Test is BaseTest {
         uint256 excessAmount = INITIAL_DEPOSIT + 1;
 
         vm.startPrank(alice);
-        vm.expectRevert(ErrorsLib.InsufficientShares.selector);
+        vm.expectRevert(stdError.arithmeticError);
         lpUSDC.transfer(bob, excessAmount);
         vm.stopPrank();
     }
@@ -309,7 +310,7 @@ contract NativeLPTokenERC20Test is BaseTest {
         vm.stopPrank();
 
         vm.startPrank(bob);
-        vm.expectRevert(ErrorsLib.InsufficientShares.selector);
+        vm.expectRevert(stdError.arithmeticError);
         lpUSDC.transferFrom(alice, charlie, 150_000 * 10 ** 6); // Try to transfer more than balance
         vm.stopPrank();
     }

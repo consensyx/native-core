@@ -791,4 +791,566 @@ contract NativeLPTokenTest is BaseTest {
         lpUSDC.transfer(bob, transferAmount);
         vm.stopPrank();
     }
+
+    function test_transferShares() public {
+        // Setup - first deposit
+        uint256 depositAmount = 100_000_000; // 100 USDC
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        lpUSDC.deposit(depositAmount);
+        vm.stopPrank();
+
+        // Wait for cooldown period to end
+        vm.warp(block.timestamp + lpUSDC.minRedeemInterval() + 1);
+
+        // Record initial states
+        uint256 aliceInitialShares = lpUSDC.shares(alice);
+        uint256 bobInitialShares = lpUSDC.shares(bob);
+        uint256 sharesToTransfer = 40_000_000; // Transfer 40 USDC worth of shares
+
+        // Calculate expected underlying amount
+        uint256 expectedTokenAmount = lpUSDC.getUnderlyingByShares(sharesToTransfer);
+
+        // Transfer shares
+        vm.startPrank(alice);
+        uint256 transferredTokenAmount = lpUSDC.transferShares(bob, sharesToTransfer);
+        vm.stopPrank();
+
+        // Verify states
+        assertEq(transferredTokenAmount, expectedTokenAmount, "Incorrect token amount returned");
+        assertEq(lpUSDC.shares(alice), aliceInitialShares - sharesToTransfer, "Incorrect sender shares");
+        assertEq(lpUSDC.shares(bob), bobInitialShares + sharesToTransfer, "Incorrect recipient shares");
+
+        // Verify balances (in terms of underlying tokens)
+        assertEq(
+            lpUSDC.balanceOf(alice),
+            lpUSDC.getUnderlyingByShares(aliceInitialShares - sharesToTransfer),
+            "Incorrect sender balance"
+        );
+        assertEq(lpUSDC.balanceOf(bob), lpUSDC.getUnderlyingByShares(sharesToTransfer), "Incorrect recipient balance");
+    }
+
+    function test_transferShares_inCooldown() public {
+        // Setup - first deposit
+        uint256 depositAmount = 100_000_000; // 100 USDC
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        lpUSDC.deposit(depositAmount);
+
+        uint256 sharesToTransfer = 40_000_000;
+
+        // Try to transfer shares immediately after deposit (should fail due to cooldown)
+        vm.expectRevert(ErrorsLib.TransferInCooldown.selector);
+        lpUSDC.transferShares(bob, sharesToTransfer);
+        vm.stopPrank();
+
+        // Add alice to whitelist
+        vm.prank(deployer);
+        lpUSDC.setWhitelist(alice, true);
+
+        vm.startPrank(alice);
+        uint256 transferredAmount = lpUSDC.transferShares(bob, sharesToTransfer);
+        vm.stopPrank();
+
+        // Verify transfer succeeded
+        assertEq(lpUSDC.shares(alice), depositAmount - sharesToTransfer, "Incorrect sender shares");
+        assertEq(lpUSDC.shares(bob), sharesToTransfer, "Incorrect recipient shares");
+        assertEq(transferredAmount, lpUSDC.getUnderlyingByShares(sharesToTransfer), "Incorrect transferred amount");
+    }
+
+    function test_transferShares_insufficientShares() public {
+        // Setup - first deposit
+        uint256 depositAmount = 100_000_000;
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        lpUSDC.deposit(depositAmount);
+
+        // Try to transfer more shares than owned
+        vm.expectRevert(); // Should revert with arithmetic underflow
+        lpUSDC.transferShares(bob, depositAmount + 1);
+        vm.stopPrank();
+    }
+
+    function test_depositFor_success() public {
+        // Setup
+        uint256 depositAmount = 100_000_000; // 100 USDC
+
+        // Record initial states
+        uint256 initialTotalShares = lpUSDC.totalShares();
+        uint256 initialTotalUnderlying = lpUSDC.totalUnderlying();
+        uint256 initialBalance = USDC.balanceOf(alice);
+        uint256 initialVaultBalance = USDC.balanceOf(address(creditVault));
+
+        // Execute depositFor
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        uint256 mintedShares = lpUSDC.depositFor(bob, depositAmount);
+        vm.stopPrank();
+
+        // Verify states
+        assertEq(mintedShares, depositAmount, "Incorrect shares minted");
+        assertEq(lpUSDC.totalShares(), initialTotalShares + depositAmount, "Incorrect total shares");
+        assertEq(lpUSDC.totalUnderlying(), initialTotalUnderlying + depositAmount, "Incorrect total underlying");
+        assertEq(USDC.balanceOf(alice), initialBalance - depositAmount, "Incorrect depositor balance");
+        assertEq(USDC.balanceOf(address(creditVault)), initialVaultBalance + depositAmount, "Incorrect vault balance");
+        assertEq(lpUSDC.shares(bob), depositAmount, "Incorrect recipient shares");
+        assertEq(lpUSDC.lastDepositTimestamp(bob), block.timestamp, "Incorrect last deposit timestamp");
+    }
+
+    function test_depositFor_belowMinDeposit() public {
+        // Setup - set min deposit to 100 USDC
+        vm.prank(deployer);
+        lpUSDC.setMinDeposit(100_000_000);
+
+        // Try to deposit 99 USDC
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 99_000_000);
+        vm.expectRevert(ErrorsLib.BelowMinimumDeposit.selector);
+        lpUSDC.depositFor(bob, 99_000_000);
+        vm.stopPrank();
+    }
+
+    function test_depositFor_whenPaused() public {
+        // Setup
+        vm.prank(deployer);
+        lpUSDC.pauseDeposit();
+
+        // Try to deposit while paused
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 100_000_000);
+        vm.expectRevert(ErrorsLib.FeaturePaused.selector);
+        lpUSDC.depositFor(bob, 100_000_000);
+        vm.stopPrank();
+    }
+
+    function test_depositFor_insufficientAllowance() public {
+        uint256 depositAmount = 100_000_000;
+
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 0);
+        vm.expectRevert("ERC20: insufficient allowance");
+        lpUSDC.depositFor(bob, depositAmount);
+        vm.stopPrank();
+    }
+
+    function test_depositFor_insufficientBalance() public {
+        // Setup - drain alice's balance
+        uint256 aliceBalance = USDC.balanceOf(alice);
+        vm.startPrank(alice);
+        USDC.transfer(charlie, aliceBalance);
+
+        // Try to deposit with insufficient balance
+        USDC.approve(address(lpUSDC), 100_000_000);
+        vm.expectRevert("ERC20: transfer amount exceeds balance");
+        lpUSDC.depositFor(bob, 100_000_000);
+        vm.stopPrank();
+    }
+
+    function test_depositFor_zeroAmount() public {
+        vm.startPrank(alice);
+        vm.expectRevert(ErrorsLib.BelowMinimumDeposit.selector);
+        lpUSDC.depositFor(bob, 0);
+        vm.stopPrank();
+    }
+
+    function test_depositFor_zeroAddress() public {
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 100_000_000);
+        vm.expectRevert(ErrorsLib.ZeroAddress.selector);
+        lpUSDC.depositFor(address(0), 100_000_000);
+        vm.stopPrank();
+    }
+
+    function test_depositFor_multipleDeposits() public {
+        // First deposit from Alice to Bob
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 100_000_000);
+        uint256 aliceDepositShares = lpUSDC.depositFor(bob, 100_000_000);
+        vm.stopPrank();
+
+        // Second deposit from Charlie to Bob
+        vm.startPrank(charlie);
+        USDC.approve(address(lpUSDC), 200_000_000);
+        uint256 charlieDepositShares = lpUSDC.depositFor(bob, 200_000_000);
+        vm.stopPrank();
+
+        // Verify share calculations
+        assertEq(aliceDepositShares, 100_000_000, "Incorrect shares for first deposit");
+        assertEq(charlieDepositShares, 200_000_000, "Incorrect shares for second deposit");
+        assertEq(lpUSDC.shares(bob), 300_000_000, "Incorrect total recipient shares");
+        assertEq(lpUSDC.shares(alice), 0, "Depositor should not receive shares");
+        assertEq(lpUSDC.shares(charlie), 0, "Depositor should not receive shares");
+    }
+
+    function test_depositFrom_success() public {
+        // Setup
+        uint256 depositAmount = 100_000_000; // 100 USDC
+
+        // Set charlie as deposit delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(charlie, true);
+
+        // Record initial states
+        uint256 initialTotalShares = lpUSDC.totalShares();
+        uint256 initialTotalUnderlying = lpUSDC.totalUnderlying();
+        uint256 initialBalance = USDC.balanceOf(alice);
+        uint256 initialVaultBalance = USDC.balanceOf(address(creditVault));
+
+        // Approve spending
+        vm.prank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+
+        // Execute depositFrom
+        vm.prank(charlie);
+        uint256 mintedShares = lpUSDC.depositFrom(alice, bob, depositAmount);
+
+        // Verify states
+        assertEq(mintedShares, depositAmount, "Incorrect shares minted");
+        assertEq(lpUSDC.totalShares(), initialTotalShares + depositAmount, "Incorrect total shares");
+        assertEq(lpUSDC.totalUnderlying(), initialTotalUnderlying + depositAmount, "Incorrect total underlying");
+        assertEq(USDC.balanceOf(alice), initialBalance - depositAmount, "Incorrect from balance");
+        assertEq(USDC.balanceOf(address(creditVault)), initialVaultBalance + depositAmount, "Incorrect vault balance");
+        assertEq(lpUSDC.shares(bob), depositAmount, "Incorrect recipient shares");
+        assertEq(lpUSDC.lastDepositTimestamp(bob), block.timestamp, "Incorrect last deposit timestamp");
+        assertEq(lpUSDC.shares(alice), 0, "From address should not receive shares");
+        assertEq(lpUSDC.shares(charlie), 0, "Delegator should not receive shares");
+    }
+
+    function test_depositFrom_notDelegator() public {
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 100_000_000);
+        vm.expectRevert(ErrorsLib.NotDepositDelegator.selector);
+        lpUSDC.depositFrom(alice, bob, 100_000_000);
+        vm.stopPrank();
+    }
+
+    function test_depositFrom_belowMinDeposit() public {
+        // Setup - set min deposit to 100 USDC
+        vm.prank(deployer);
+        lpUSDC.setMinDeposit(100_000_000);
+
+        // Set charlie as deposit delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(charlie, true);
+
+        // Try to deposit 99 USDC
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 99_000_000);
+        vm.stopPrank();
+
+        vm.startPrank(charlie);
+        vm.expectRevert(ErrorsLib.BelowMinimumDeposit.selector);
+        lpUSDC.depositFrom(alice, bob, 99_000_000);
+        vm.stopPrank();
+    }
+
+    function test_depositFrom_whenPaused() public {
+        // Setup
+        vm.prank(deployer);
+        lpUSDC.pauseDeposit();
+
+        // Set charlie as deposit delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(charlie, true);
+
+        // Try to deposit while paused
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 100_000_000);
+        vm.stopPrank();
+
+        vm.startPrank(charlie);
+        vm.expectRevert(ErrorsLib.FeaturePaused.selector);
+        lpUSDC.depositFrom(alice, bob, 100_000_000);
+        vm.stopPrank();
+    }
+
+    function test_depositFrom_insufficientAllowance() public {
+        // Set charlie as deposit delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(charlie, true);
+
+        uint256 depositAmount = 100_000_000;
+
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 0);
+        vm.stopPrank();
+
+        vm.startPrank(charlie);
+        vm.expectRevert("ERC20: insufficient allowance");
+        lpUSDC.depositFrom(alice, bob, depositAmount);
+        vm.stopPrank();
+    }
+
+    function test_depositFrom_insufficientBalance() public {
+        // Set charlie as deposit delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(charlie, true);
+
+        // Setup - drain alice's balance
+        uint256 aliceBalance = USDC.balanceOf(alice);
+        vm.startPrank(alice);
+        USDC.transfer(deployer, aliceBalance);
+        USDC.approve(address(lpUSDC), 100_000_000);
+        vm.stopPrank();
+
+        // Try to deposit with insufficient balance
+        vm.startPrank(charlie);
+        vm.expectRevert("ERC20: transfer amount exceeds balance");
+        lpUSDC.depositFrom(alice, bob, 100_000_000);
+        vm.stopPrank();
+    }
+
+    function test_depositFrom_zeroAmount() public {
+        // Set charlie as deposit delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(charlie, true);
+
+        vm.startPrank(charlie);
+        vm.expectRevert(ErrorsLib.BelowMinimumDeposit.selector);
+        lpUSDC.depositFrom(alice, bob, 0);
+        vm.stopPrank();
+    }
+
+    function test_depositFrom_zeroAddress() public {
+        // Set charlie as deposit delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(charlie, true);
+
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 100_000_000);
+        vm.stopPrank();
+
+        vm.startPrank(charlie);
+        vm.expectRevert(ErrorsLib.ZeroAddress.selector);
+        lpUSDC.depositFrom(alice, address(0), 100_000_000);
+        vm.stopPrank();
+    }
+
+    function test_depositFrom_multipleDeposits() public {
+        // Set charlie as deposit delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(charlie, true);
+
+        // First deposit from Alice
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 100_000_000);
+        vm.stopPrank();
+
+        vm.startPrank(charlie);
+        uint256 firstDepositShares = lpUSDC.depositFrom(alice, bob, 100_000_000);
+        vm.stopPrank();
+
+        // Give deployer some USDC for second deposit
+        deal(address(USDC), deployer, 200_000_000);
+
+        // Second deposit from deployer
+        vm.startPrank(deployer);
+        USDC.approve(address(lpUSDC), 200_000_000);
+        vm.stopPrank();
+
+        vm.startPrank(charlie);
+        uint256 secondDepositShares = lpUSDC.depositFrom(deployer, bob, 200_000_000);
+        vm.stopPrank();
+
+        // Verify share calculations
+        assertEq(firstDepositShares, 100_000_000, "Incorrect shares for first deposit");
+        assertEq(secondDepositShares, 200_000_000, "Incorrect shares for second deposit");
+        assertEq(lpUSDC.shares(bob), 300_000_000, "Incorrect total recipient shares");
+        assertEq(lpUSDC.shares(alice), 0, "From address should not receive shares");
+        assertEq(lpUSDC.shares(deployer), 0, "From address should not receive shares");
+        assertEq(lpUSDC.shares(charlie), 0, "Delegator should not receive shares");
+    }
+
+    function test_depositFrom_delegatorRevoked() public {
+        // Set charlie as deposit delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(charlie, true);
+
+        // Setup approval
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 100_000_000);
+        vm.stopPrank();
+
+        // Revoke delegator status
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(charlie, false);
+
+        // Try to deposit after revocation
+        vm.startPrank(charlie);
+        vm.expectRevert(ErrorsLib.NotDepositDelegator.selector);
+        lpUSDC.depositFrom(alice, bob, 100_000_000);
+        vm.stopPrank();
+    }
+
+    function test_redeemTo_success() public {
+        // Setup - first deposit
+        uint256 depositAmount = 100_000_000; // 100 USDC
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        uint256 mintedShares = lpUSDC.deposit(depositAmount);
+
+        // Wait for minimum redeem interval
+        vm.warp(block.timestamp + lpUSDC.minRedeemInterval() + 1);
+
+        // Record states before redeem
+        uint256 initialTotalShares = lpUSDC.totalShares();
+        uint256 initialTotalUnderlying = lpUSDC.totalUnderlying();
+        uint256 initialBobBalance = USDC.balanceOf(bob);
+        uint256 initialVaultBalance = USDC.balanceOf(address(creditVault));
+
+        // Execute redeemTo
+        uint256 redeemedAmount = lpUSDC.redeemTo(mintedShares, bob);
+        vm.stopPrank();
+
+        // Verify states
+        assertEq(redeemedAmount, depositAmount, "Incorrect redeemed amount");
+        assertEq(lpUSDC.totalShares(), initialTotalShares - mintedShares, "Incorrect total shares");
+        assertEq(lpUSDC.totalUnderlying(), initialTotalUnderlying - redeemedAmount, "Incorrect total underlying");
+        assertEq(USDC.balanceOf(bob), initialBobBalance + redeemedAmount, "Incorrect recipient balance");
+        assertEq(USDC.balanceOf(address(creditVault)), initialVaultBalance - redeemedAmount, "Incorrect vault balance");
+        assertEq(lpUSDC.shares(alice), 0, "Incorrect user shares");
+    }
+
+    function test_redeemTo_earlyWithdrawalFee() public {
+        // Setup
+        uint256 depositAmount = 100_000_000; // 100 USDC
+        uint256 earlyWithdrawFeeBips = 100; // 1%
+
+        vm.prank(deployer);
+        lpUSDC.setEarlyWithdrawFeeBips(earlyWithdrawFeeBips);
+
+        // Deposit
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        uint256 mintedShares = lpUSDC.deposit(depositAmount);
+
+        // Record states
+        uint256 depositTime = lpUSDC.lastDepositTimestamp(alice);
+        uint256 initialBobBalance = USDC.balanceOf(bob);
+
+        // Ensure we're still within early withdrawal period
+        vm.warp(depositTime + lpUSDC.minRedeemInterval() - 1);
+
+        // Calculate expected amounts
+        uint256 expectedFee = (depositAmount * earlyWithdrawFeeBips) / 10_000; // 1% of 100 USDC
+        uint256 expectedRedeemAmount = depositAmount - expectedFee; // Should be 99 USDC
+
+        // Execute early redeemTo
+        uint256 redeemedAmount = lpUSDC.redeemTo(mintedShares, bob);
+        vm.stopPrank();
+
+        // Verify states
+        assertEq(redeemedAmount, expectedRedeemAmount, "Incorrect redeemed amount");
+        assertEq(USDC.balanceOf(bob), initialBobBalance + expectedRedeemAmount, "Incorrect recipient balance");
+        assertEq(lpUSDC.shares(alice), 0, "Should have no shares left");
+    }
+
+    function test_redeemTo_insufficientShares() public {
+        // Try to redeem without any shares
+        vm.startPrank(alice);
+        vm.expectRevert(ErrorsLib.InsufficientShares.selector);
+        lpUSDC.redeemTo(100_000_000, bob);
+        vm.stopPrank();
+    }
+
+    function test_redeemTo_zeroAmount() public {
+        vm.startPrank(alice);
+        vm.expectRevert(ErrorsLib.ZeroAmount.selector);
+        lpUSDC.redeemTo(0, bob);
+        vm.stopPrank();
+    }
+
+    function test_redeemTo_zeroAddress() public {
+        // Setup - first deposit
+        uint256 depositAmount = 100_000_000;
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        lpUSDC.deposit(depositAmount);
+
+        // Try to redeem to zero address
+        vm.expectRevert(ErrorsLib.ZeroAddress.selector);
+        lpUSDC.redeemTo(depositAmount, address(0));
+        vm.stopPrank();
+    }
+
+    function test_redeemTo_whenPaused() public {
+        // Setup - first deposit
+        uint256 depositAmount = 100_000_000;
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        uint256 mintedShares = lpUSDC.deposit(depositAmount);
+        vm.stopPrank();
+
+        // Pause contract
+        vm.prank(deployer);
+        lpUSDC.pauseRedeem();
+
+        // Try to redeem while paused
+        vm.startPrank(alice);
+        vm.expectRevert(ErrorsLib.FeaturePaused.selector);
+        lpUSDC.redeemTo(mintedShares, bob);
+        vm.stopPrank();
+    }
+
+    function test_redeemTo_partialAmount() public {
+        // Setup - first deposit
+        uint256 depositAmount = 100_000_000;
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        uint256 mintedShares = lpUSDC.deposit(depositAmount);
+
+        // Wait for minimum redeem interval
+        vm.warp(block.timestamp + lpUSDC.minRedeemInterval() + 1);
+
+        // Record initial balance
+        uint256 initialBobBalance = USDC.balanceOf(bob);
+
+        // Redeem half of shares
+        uint256 redeemShares = mintedShares / 2;
+        uint256 expectedRedeemAmount = depositAmount / 2;
+
+        uint256 redeemedAmount = lpUSDC.redeemTo(redeemShares, bob);
+        vm.stopPrank();
+
+        // Verify states
+        assertEq(redeemedAmount, expectedRedeemAmount, "Incorrect redeemed amount");
+        assertEq(lpUSDC.shares(alice), redeemShares, "Incorrect remaining shares");
+        assertEq(USDC.balanceOf(bob), initialBobBalance + expectedRedeemAmount, "Incorrect recipient balance");
+    }
+
+    function test_redeemTo_afterYieldDistribution() public {
+        // Setup - first deposit
+        uint256 depositAmount = 100_000_000;
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        uint256 mintedShares = lpUSDC.deposit(depositAmount);
+        vm.stopPrank();
+
+        // Record initial balance
+        uint256 initialBobBalance = USDC.balanceOf(bob);
+
+        // Distribute yield
+        uint256 yieldAmount = 10_000_000; // 10 USDC yield
+        deal(address(USDC), address(creditVault), USDC.balanceOf(address(creditVault)) + yieldAmount);
+
+        vm.startPrank(address(creditVault));
+        USDC.approve(address(lpUSDC), yieldAmount);
+        lpUSDC.distributeYield(yieldAmount);
+        vm.stopPrank();
+
+        // Wait for minimum redeem interval
+        vm.warp(block.timestamp + lpUSDC.minRedeemInterval() + 1);
+
+        // Calculate expected redeem amount with yield
+        uint256 expectedRedeemAmount = depositAmount + yieldAmount;
+
+        // Redeem all shares to bob
+        vm.startPrank(alice);
+        uint256 redeemedAmount = lpUSDC.redeemTo(mintedShares, bob);
+        vm.stopPrank();
+
+        // Verify redeemed amount includes yield
+        assertEq(redeemedAmount, expectedRedeemAmount, "Incorrect redeemed amount with yield");
+        assertEq(USDC.balanceOf(bob), initialBobBalance + redeemedAmount, "Incorrect final balance");
+    }
 }
