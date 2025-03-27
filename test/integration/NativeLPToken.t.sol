@@ -758,11 +758,11 @@ contract NativeLPTokenTest is BaseTest {
 
         // Add alice to whitelist
         vm.startPrank(deployer);
-        lpUSDC.setWhitelist(alice, true);
+        lpUSDC.setRedeemCooldownExempt(alice, true);
         vm.stopPrank();
 
         // Verify alice is whitelisted
-        assertTrue(lpUSDC.whitelist(alice), "Alice should be whitelisted");
+        assertTrue(lpUSDC.redeemCooldownExempt(alice), "Alice should be whitelisted");
 
         // Transfer should now succeed even in cooldown period
         vm.startPrank(alice);
@@ -779,11 +779,11 @@ contract NativeLPTokenTest is BaseTest {
 
         // Remove alice from whitelist
         vm.startPrank(deployer);
-        lpUSDC.setWhitelist(alice, false);
+        lpUSDC.setRedeemCooldownExempt(alice, false);
         vm.stopPrank();
 
         // Verify alice is no longer whitelisted
-        assertFalse(lpUSDC.whitelist(alice), "Alice should not be whitelisted");
+        assertFalse(lpUSDC.redeemCooldownExempt(alice), "Alice should not be whitelisted");
 
         // Try to transfer again (should fail as no longer whitelisted)
         vm.startPrank(alice);
@@ -846,7 +846,7 @@ contract NativeLPTokenTest is BaseTest {
 
         // Add alice to whitelist
         vm.prank(deployer);
-        lpUSDC.setWhitelist(alice, true);
+        lpUSDC.setRedeemCooldownExempt(alice, true);
 
         vm.startPrank(alice);
         uint256 transferredAmount = lpUSDC.transferShares(bob, sharesToTransfer);
@@ -980,206 +980,6 @@ contract NativeLPTokenTest is BaseTest {
         assertEq(lpUSDC.shares(bob), 300_000_000, "Incorrect total recipient shares");
         assertEq(lpUSDC.shares(alice), 0, "Depositor should not receive shares");
         assertEq(lpUSDC.shares(charlie), 0, "Depositor should not receive shares");
-    }
-
-    function test_depositFrom_success() public {
-        // Setup
-        uint256 depositAmount = 100_000_000; // 100 USDC
-
-        // Set charlie as deposit delegator
-        vm.prank(deployer);
-        lpUSDC.setDepositDelegator(charlie, true);
-
-        // Record initial states
-        uint256 initialTotalShares = lpUSDC.totalShares();
-        uint256 initialTotalUnderlying = lpUSDC.totalUnderlying();
-        uint256 initialBalance = USDC.balanceOf(alice);
-        uint256 initialVaultBalance = USDC.balanceOf(address(creditVault));
-
-        // Approve spending
-        vm.prank(alice);
-        USDC.approve(address(lpUSDC), depositAmount);
-
-        // Execute depositFrom
-        vm.prank(charlie);
-        uint256 mintedShares = lpUSDC.depositFrom(alice, bob, depositAmount);
-
-        // Verify states
-        assertEq(mintedShares, depositAmount, "Incorrect shares minted");
-        assertEq(lpUSDC.totalShares(), initialTotalShares + depositAmount, "Incorrect total shares");
-        assertEq(lpUSDC.totalUnderlying(), initialTotalUnderlying + depositAmount, "Incorrect total underlying");
-        assertEq(USDC.balanceOf(alice), initialBalance - depositAmount, "Incorrect from balance");
-        assertEq(USDC.balanceOf(address(creditVault)), initialVaultBalance + depositAmount, "Incorrect vault balance");
-        assertEq(lpUSDC.shares(bob), depositAmount, "Incorrect recipient shares");
-        assertEq(lpUSDC.lastDepositTimestamp(bob), block.timestamp, "Incorrect last deposit timestamp");
-        assertEq(lpUSDC.shares(alice), 0, "From address should not receive shares");
-        assertEq(lpUSDC.shares(charlie), 0, "Delegator should not receive shares");
-    }
-
-    function test_depositFrom_notDelegator() public {
-        vm.startPrank(alice);
-        USDC.approve(address(lpUSDC), 100_000_000);
-        vm.expectRevert(ErrorsLib.NotDepositDelegator.selector);
-        lpUSDC.depositFrom(alice, bob, 100_000_000);
-        vm.stopPrank();
-    }
-
-    function test_depositFrom_belowMinDeposit() public {
-        // Setup - set min deposit to 100 USDC
-        vm.prank(deployer);
-        lpUSDC.setMinDeposit(100_000_000);
-
-        // Set charlie as deposit delegator
-        vm.prank(deployer);
-        lpUSDC.setDepositDelegator(charlie, true);
-
-        // Try to deposit 99 USDC
-        vm.startPrank(alice);
-        USDC.approve(address(lpUSDC), 99_000_000);
-        vm.stopPrank();
-
-        vm.startPrank(charlie);
-        vm.expectRevert(ErrorsLib.BelowMinimumDeposit.selector);
-        lpUSDC.depositFrom(alice, bob, 99_000_000);
-        vm.stopPrank();
-    }
-
-    function test_depositFrom_whenPaused() public {
-        // Setup
-        vm.prank(deployer);
-        lpUSDC.pauseDeposit();
-
-        // Set charlie as deposit delegator
-        vm.prank(deployer);
-        lpUSDC.setDepositDelegator(charlie, true);
-
-        // Try to deposit while paused
-        vm.startPrank(alice);
-        USDC.approve(address(lpUSDC), 100_000_000);
-        vm.stopPrank();
-
-        vm.startPrank(charlie);
-        vm.expectRevert(ErrorsLib.FeaturePaused.selector);
-        lpUSDC.depositFrom(alice, bob, 100_000_000);
-        vm.stopPrank();
-    }
-
-    function test_depositFrom_insufficientAllowance() public {
-        // Set charlie as deposit delegator
-        vm.prank(deployer);
-        lpUSDC.setDepositDelegator(charlie, true);
-
-        uint256 depositAmount = 100_000_000;
-
-        vm.startPrank(alice);
-        USDC.approve(address(lpUSDC), 0);
-        vm.stopPrank();
-
-        vm.startPrank(charlie);
-        vm.expectRevert("ERC20: insufficient allowance");
-        lpUSDC.depositFrom(alice, bob, depositAmount);
-        vm.stopPrank();
-    }
-
-    function test_depositFrom_insufficientBalance() public {
-        // Set charlie as deposit delegator
-        vm.prank(deployer);
-        lpUSDC.setDepositDelegator(charlie, true);
-
-        // Setup - drain alice's balance
-        uint256 aliceBalance = USDC.balanceOf(alice);
-        vm.startPrank(alice);
-        USDC.transfer(deployer, aliceBalance);
-        USDC.approve(address(lpUSDC), 100_000_000);
-        vm.stopPrank();
-
-        // Try to deposit with insufficient balance
-        vm.startPrank(charlie);
-        vm.expectRevert("ERC20: transfer amount exceeds balance");
-        lpUSDC.depositFrom(alice, bob, 100_000_000);
-        vm.stopPrank();
-    }
-
-    function test_depositFrom_zeroAmount() public {
-        // Set charlie as deposit delegator
-        vm.prank(deployer);
-        lpUSDC.setDepositDelegator(charlie, true);
-
-        vm.startPrank(charlie);
-        vm.expectRevert(ErrorsLib.BelowMinimumDeposit.selector);
-        lpUSDC.depositFrom(alice, bob, 0);
-        vm.stopPrank();
-    }
-
-    function test_depositFrom_zeroAddress() public {
-        // Set charlie as deposit delegator
-        vm.prank(deployer);
-        lpUSDC.setDepositDelegator(charlie, true);
-
-        vm.startPrank(alice);
-        USDC.approve(address(lpUSDC), 100_000_000);
-        vm.stopPrank();
-
-        vm.startPrank(charlie);
-        vm.expectRevert(ErrorsLib.ZeroAddress.selector);
-        lpUSDC.depositFrom(alice, address(0), 100_000_000);
-        vm.stopPrank();
-    }
-
-    function test_depositFrom_multipleDeposits() public {
-        // Set charlie as deposit delegator
-        vm.prank(deployer);
-        lpUSDC.setDepositDelegator(charlie, true);
-
-        // First deposit from Alice
-        vm.startPrank(alice);
-        USDC.approve(address(lpUSDC), 100_000_000);
-        vm.stopPrank();
-
-        vm.startPrank(charlie);
-        uint256 firstDepositShares = lpUSDC.depositFrom(alice, bob, 100_000_000);
-        vm.stopPrank();
-
-        // Give deployer some USDC for second deposit
-        deal(address(USDC), deployer, 200_000_000);
-
-        // Second deposit from deployer
-        vm.startPrank(deployer);
-        USDC.approve(address(lpUSDC), 200_000_000);
-        vm.stopPrank();
-
-        vm.startPrank(charlie);
-        uint256 secondDepositShares = lpUSDC.depositFrom(deployer, bob, 200_000_000);
-        vm.stopPrank();
-
-        // Verify share calculations
-        assertEq(firstDepositShares, 100_000_000, "Incorrect shares for first deposit");
-        assertEq(secondDepositShares, 200_000_000, "Incorrect shares for second deposit");
-        assertEq(lpUSDC.shares(bob), 300_000_000, "Incorrect total recipient shares");
-        assertEq(lpUSDC.shares(alice), 0, "From address should not receive shares");
-        assertEq(lpUSDC.shares(deployer), 0, "From address should not receive shares");
-        assertEq(lpUSDC.shares(charlie), 0, "Delegator should not receive shares");
-    }
-
-    function test_depositFrom_delegatorRevoked() public {
-        // Set charlie as deposit delegator
-        vm.prank(deployer);
-        lpUSDC.setDepositDelegator(charlie, true);
-
-        // Setup approval
-        vm.startPrank(alice);
-        USDC.approve(address(lpUSDC), 100_000_000);
-        vm.stopPrank();
-
-        // Revoke delegator status
-        vm.prank(deployer);
-        lpUSDC.setDepositDelegator(charlie, false);
-
-        // Try to deposit after revocation
-        vm.startPrank(charlie);
-        vm.expectRevert(ErrorsLib.NotDepositDelegator.selector);
-        lpUSDC.depositFrom(alice, bob, 100_000_000);
-        vm.stopPrank();
     }
 
     function test_redeemTo_success() public {

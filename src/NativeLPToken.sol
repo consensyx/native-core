@@ -58,11 +58,8 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
     /// @notice Mapping of user addresses to their last deposit timestamp
     mapping(address => uint256) public lastDepositTimestamp;
 
-    /// @notice Mapping of addresses to their whitelist status for cooldown and early withdraw bypass
-    mapping(address => bool) public whitelist;
-
-    /// @notice Mapping of addresses authorized to act as deposit delegators
-    mapping(address => bool) public depositDelegators;
+    /// @notice Mapping of addresses exempt from redeem cooldown period and early withdrawal fees
+    mapping(address => bool) public redeemCooldownExempt;
 
     /*//////////////////////////////////////////////////////////////////////////
                                         EVENTS
@@ -101,11 +98,8 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
     /// @notice Event emitted when early withdraw fee is updated
     event EarlyWithdrawFeeBipsUpdated(uint256 oldFeeBips, uint256 newFeeBips);
 
-    /// @notice Event emitted when an address's whitelist status is updated
-    event WhitelistUpdated(address indexed account, bool status);
-
-    /// @notice Event emitted when deposit delegation is updated
-    event DepositDelegatorUpdated(address indexed account, bool status);
+    /// @notice Event emitted when an address's redeem cooldown exemption status is updated
+    event RedeemCooldownExemptUpdated(address indexed account, bool status);
 
     /*//////////////////////////////////////////////////////////////////////////
                                      CONSTRUCTOR
@@ -145,21 +139,6 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
     ) external nonReentrant whenNotPaused(depositPaused) returns (uint256 sharesToMint) {
         require(to != address(0), ErrorsLib.ZeroAddress());
         sharesToMint = _deposit(msg.sender, to, amount);
-    }
-
-    /// @notice Deposit underlying tokens from another contract
-    /// @param from The address to transfer underlying tokens from
-    /// @param to The address to mint shares to
-    /// @param amount Amount of underlying tokens to deposit
-    /// @return sharesToMint Amount of LP tokens minted
-    function depositFrom(
-        address from,
-        address to,
-        uint256 amount
-    ) external nonReentrant whenNotPaused(depositPaused) returns (uint256 sharesToMint) {
-        require(from != address(0) && to != address(0), ErrorsLib.ZeroAddress());
-        require(depositDelegators[msg.sender], ErrorsLib.NotDepositDelegator());
-        sharesToMint = _deposit(from, to, amount);
     }
 
     /// @notice Redeem LP tokens for underlying tokens
@@ -295,25 +274,15 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         emit EarlyWithdrawFeeBipsUpdated(oldFeeBips, _earlyWithdrawFeeBips);
     }
 
-    /// @notice Sets the whitelist status for an address to bypass cooldown and early withdraw
+    /// @notice Sets the redeem cooldown exemption status for an address
     /// @param account The address to update
-    /// @param status The new whitelist status
-    function setWhitelist(address account, bool status) external onlyOwner {
-        require(account != address(0), ErrorsLib.ZeroAddress());
-
-        whitelist[account] = status;
-        emit WhitelistUpdated(account, status);
-    }
-
-    /// @notice Sets the deposit delegator status for an address
-    /// @param account The address to update
-    /// @param status The new delegate status
+    /// @param status The new exemption status
     /// @dev Can only be called by the owner
-    function setDepositDelegator(address account, bool status) external onlyOwner {
+    function setRedeemCooldownExempt(address account, bool status) external onlyOwner {
         require(account != address(0), ErrorsLib.ZeroAddress());
 
-        depositDelegators[account] = status;
-        emit DepositDelegatorUpdated(account, status);
+        redeemCooldownExempt[account] = status;
+        emit RedeemCooldownExemptUpdated(account, status);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -390,7 +359,7 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
 
         if (
             block.timestamp < lastDepositTimestamp[msg.sender] + minRedeemInterval && earlyWithdrawFeeBips > 0
-                && !whitelist[msg.sender]
+                && !redeemCooldownExempt[msg.sender]
         ) {
             underlyingAmount -= (underlyingAmount * earlyWithdrawFeeBips) / 10_000;
         }
@@ -452,7 +421,7 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
     function _validateTransferCooldown(address user) internal view {
         // During cooldown period, user can't transfer shares, but can still redeem
         require(
-            lastDepositTimestamp[user] + minRedeemInterval <= block.timestamp || whitelist[user],
+            lastDepositTimestamp[user] + minRedeemInterval <= block.timestamp || redeemCooldownExempt[user],
             ErrorsLib.TransferInCooldown()
         );
     }
