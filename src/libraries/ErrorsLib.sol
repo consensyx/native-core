@@ -86,9 +86,6 @@ library ErrorsLib {
     /// @notice Thrown when nonce is used
     error NonceUsed();
 
-    /// @notice Thrown when the address is not a deposit delegate
-    error NotDepositDelegator();
-
     /// @notice Thrown when output amount is less than minimum required
     error NotEnoughAmountOut(uint256 amountOut, uint256 amountOutMinimum);
 
@@ -97,6 +94,9 @@ library ErrorsLib {
 
     /// @notice Thrown the address is not a trader or liquidator
     error NotTraderOrLiquidator();
+
+    /// @notice Error when caller is not a trusted operator
+    error NotTrustedOperator();
 
     /// @notice Thrown when there is no yield to distribute
     error NoYieldToDistribute();

@@ -55,8 +55,8 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
     /// @notice Mapping of user addresses to their share balances
     mapping(address => uint256) public shares;
 
-    /// @notice Mapping of addresses authorized to act as deposit delegators
-    mapping(address => bool) public depositDelegators;
+    /// @notice Mapping of trusted operators who can call depositFor and redeemTo functions
+    mapping(address => bool) public trustedOperators;
 
     /// @notice Mapping of user addresses to their last deposit timestamp
     mapping(address => uint256) public lastDepositTimestamp;
@@ -101,8 +101,8 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
     /// @notice Event emitted when early withdraw fee is updated
     event EarlyWithdrawFeeBipsUpdated(uint256 oldFeeBips, uint256 newFeeBips);
 
-    /// @notice Event emitted when deposit delegation is updated
-    event DepositDelegatorUpdated(address indexed account, bool status);
+    /// @notice Event emitted when a trusted operator status is updated
+    event TrustedOperatorUpdated(address indexed account, bool status);
 
     /// @notice Event emitted when an address's redeem cooldown exemption status is updated
     event RedeemCooldownExemptUpdated(address indexed account, bool status);
@@ -144,7 +144,7 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         uint256 amount
     ) external nonReentrant whenNotPaused(depositPaused) returns (uint256 sharesToMint) {
         require(to != address(0), ErrorsLib.ZeroAddress());
-        require(depositDelegators[msg.sender], ErrorsLib.NotDepositDelegator());
+        require(trustedOperators[msg.sender], ErrorsLib.NotTrustedOperator());
         sharesToMint = _deposit(msg.sender, to, amount);
     }
 
@@ -169,6 +169,7 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         address to
     ) external nonReentrant whenNotPaused(redeemPaused) returns (uint256 underlyingAmount) {
         require(to != address(0), ErrorsLib.ZeroAddress());
+        require(trustedOperators[msg.sender], ErrorsLib.NotTrustedOperator());
         underlyingAmount = _redeem(sharesToBurn, to);
     }
 
@@ -281,14 +282,14 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         emit EarlyWithdrawFeeBipsUpdated(oldFeeBips, _earlyWithdrawFeeBips);
     }
 
+    /// @notice Sets the trusted operator status for an address
     /// @param account The address to update
-    /// @param status The new delegate status
-    /// @dev Can only be called by the owner
-    function setDepositDelegator(address account, bool status) external onlyOwner {
+    /// @param status The new operator status
+    function setTrustedOperator(address account, bool status) external onlyOwner {
         require(account != address(0), ErrorsLib.ZeroAddress());
 
-        depositDelegators[account] = status;
-        emit DepositDelegatorUpdated(account, status);
+        trustedOperators[account] = status;
+        emit TrustedOperatorUpdated(account, status);
     }
 
     /// @notice Sets the redeem cooldown exemption status for an address
