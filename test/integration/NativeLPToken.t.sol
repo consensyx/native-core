@@ -875,6 +875,10 @@ contract NativeLPTokenTest is BaseTest {
         // Setup
         uint256 depositAmount = 100_000_000; // 100 USDC
 
+        // Set alice as deposit delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(alice, true);
+
         // Record initial states
         uint256 initialTotalShares = lpUSDC.totalShares();
         uint256 initialTotalUnderlying = lpUSDC.totalUnderlying();
@@ -897,10 +901,21 @@ contract NativeLPTokenTest is BaseTest {
         assertEq(lpUSDC.lastDepositTimestamp(bob), block.timestamp, "Incorrect last deposit timestamp");
     }
 
+    function test_depositFor_notDelegator() public {
+        // Try to deposit without being a delegator
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), 100_000_000);
+        vm.expectRevert(ErrorsLib.NotDepositDelegator.selector);
+        lpUSDC.depositFor(bob, 100_000_000);
+        vm.stopPrank();
+    }
+
     function test_depositFor_belowMinDeposit() public {
         // Setup - set min deposit to 100 USDC
-        vm.prank(deployer);
+        vm.startPrank(deployer);
         lpUSDC.setMinDeposit(100_000_000);
+        lpUSDC.setDepositDelegator(alice, true);
+        vm.stopPrank();
 
         // Try to deposit 99 USDC
         vm.startPrank(alice);
@@ -912,8 +927,10 @@ contract NativeLPTokenTest is BaseTest {
 
     function test_depositFor_whenPaused() public {
         // Setup
-        vm.prank(deployer);
+        vm.startPrank(deployer);
         lpUSDC.pauseDeposit();
+        lpUSDC.setDepositDelegator(alice, true);
+        vm.stopPrank();
 
         // Try to deposit while paused
         vm.startPrank(alice);
@@ -924,6 +941,10 @@ contract NativeLPTokenTest is BaseTest {
     }
 
     function test_depositFor_insufficientAllowance() public {
+        // Setup delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(alice, true);
+
         uint256 depositAmount = 100_000_000;
 
         vm.startPrank(alice);
@@ -934,6 +955,10 @@ contract NativeLPTokenTest is BaseTest {
     }
 
     function test_depositFor_insufficientBalance() public {
+        // Setup delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(alice, true);
+
         // Setup - drain alice's balance
         uint256 aliceBalance = USDC.balanceOf(alice);
         vm.startPrank(alice);
@@ -947,6 +972,10 @@ contract NativeLPTokenTest is BaseTest {
     }
 
     function test_depositFor_zeroAmount() public {
+        // Setup delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(alice, true);
+
         vm.startPrank(alice);
         vm.expectRevert(ErrorsLib.BelowMinimumDeposit.selector);
         lpUSDC.depositFor(bob, 0);
@@ -954,6 +983,10 @@ contract NativeLPTokenTest is BaseTest {
     }
 
     function test_depositFor_zeroAddress() public {
+        // Setup delegator
+        vm.prank(deployer);
+        lpUSDC.setDepositDelegator(alice, true);
+
         vm.startPrank(alice);
         USDC.approve(address(lpUSDC), 100_000_000);
         vm.expectRevert(ErrorsLib.ZeroAddress.selector);
@@ -962,6 +995,12 @@ contract NativeLPTokenTest is BaseTest {
     }
 
     function test_depositFor_multipleDeposits() public {
+        // Setup delegators
+        vm.startPrank(deployer);
+        lpUSDC.setDepositDelegator(alice, true);
+        lpUSDC.setDepositDelegator(charlie, true);
+        vm.stopPrank();
+
         // First deposit from Alice to Bob
         vm.startPrank(alice);
         USDC.approve(address(lpUSDC), 100_000_000);
