@@ -42,7 +42,10 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     mapping(uint256 => bool) public nonces;
 
     /// @notice Mapping of authorized market makers who can sign RFQ quotes
-    mapping(address => bool) public isSigner;
+    mapping(address => bool) public rfqSigners;
+
+    /// @notice Mapping of whitelisted market makers who can trade without signatures
+    mapping(address => bool) public isWhitelisedSigners;
 
     /*//////////////////////////////////////////////////////////////////////////
                                      RECEIVE FUNCTION
@@ -120,45 +123,6 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         );
     }
 
-    /// @notice See {NativeRouter-fillOrder} for detailed documentation
-    /// @dev Called by NativeRouter to execute fill order trades in the pool
-    function fillOrder(uint256 effectiveAmountIn, PermitQuote memory quote) external override onlyRouter {
-        // Prevent replay attacks
-        require(!nonces[quote.nonce], ErrorsLib.NonceUsed());
-
-        // Store original tokenOut address to handle ETH unwrapping if tokenOut is zero address
-        address originalTokenOut = quote.tokenOut;
-
-        // Handle ETH case: convert zero address to WETH9 for buyer or seller token
-        quote.tokenOut = quote.tokenOut == address(0) ? WETH9 : quote.tokenOut;
-        quote.tokenIn = quote.tokenIn == address(0) ? WETH9 : quote.tokenIn;
-
-        uint256 tokenOutAmount = _transferAndCallback(
-            quote.marketMaker,
-            quote.recipient,
-            quote.tokenOut,
-            originalTokenOut,
-            quote.tokenIn,
-            quote.amountOut,
-            quote.amountIn,
-            effectiveAmountIn
-        );
-
-        // Mark nonce as used
-        nonces[quote.nonce] = true;
-
-        emit OrderFilled(
-            quote.recipient,
-            quote.tokenIn,
-            quote.tokenOut,
-            effectiveAmountIn,
-            tokenOutAmount,
-            quote.marketMaker,
-            quote.orderBookSig,
-            quote.orderBookDigest
-        );
-    }
-
     /*//////////////////////////////////////////////////////////////////////////
                                     ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
@@ -174,12 +138,23 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
 
     /// @notice Adds or removes a market maker's authorization to sign quotes
     /// @param signer The market maker's address
-    /// @param _isSigner True to authorize, false to revoke
-    function setSigner(address signer, bool _isSigner) external onlyOwner {
+    /// @param isSigner True to authorize, false to revoke
+    function setSigner(address signer, bool isSigner) external onlyOwner {
         require(signer != address(0), ErrorsLib.ZeroAddress());
 
-        isSigner[signer] = _isSigner;
-        emit SignerUpdated(signer, _isSigner);
+        rfqSigners[signer] = isSigner;
+        emit SignerUpdated(signer, isSigner);
+    }
+
+    /// @notice Sets the whitelisted status for a market maker to bypass signature verification
+    /// @param account The address of the market maker
+    /// @param status The new whitelisted status
+    /// @dev Can only be called by the owner
+    function setWhitelistedSigner(address account, bool status) external onlyOwner {
+        require(account != address(0), ErrorsLib.ZeroAddress());
+
+        isWhitelisedSigners[account] = status;
+        emit WhitelistedSignerUpdated(account, status);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -196,7 +171,7 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         uint256 sellerTokenAmount,
         uint256 effectiveSellerTokenAmount
     ) internal returns (uint256 _buyerTokenAmount) {
-        _buyerTokenAmount = effectiveSellerTokenAmount < sellerTokenAmount
+        _buyerTokenAmount = effectiveSellerTokenAmount != sellerTokenAmount
             ? (effectiveSellerTokenAmount * buyerTokenAmount) / sellerTokenAmount
             : buyerTokenAmount;
 
@@ -231,7 +206,11 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     }
 
     function _verifyPMMSignature(RFQTQuote memory quote) internal view {
-        require(isSigner[quote.signer], ErrorsLib.InvalidSigner());
+        if (isWhitelisedSigners[quote.signer]) {
+            return;
+        }
+
+        require(rfqSigners[quote.signer], ErrorsLib.InvalidSigner());
 
         bytes32 digest = _hashTypedDataV4(
             keccak256(

@@ -103,7 +103,7 @@ contract NativeRFQPoolTest is BaseTest {
 
         vm.startPrank(bob);
         weth.approve(address(router), wethSellAmount);
-        router.tradeRFQT(quote);
+        router.tradeRFQT(quote, 0, 0);
         vm.stopPrank();
 
         return (wethSellAmount, expectedUSDCAmount);
@@ -118,7 +118,7 @@ contract NativeRFQPoolTest is BaseTest {
 
         vm.startPrank(alice);
         USDC.approve(address(router2), usdcSellAmount);
-        router2.tradeRFQT(quote);
+        router2.tradeRFQT(quote, 0, 0);
         vm.stopPrank();
 
         return (usdcSellAmount, expectedWETHAmount);

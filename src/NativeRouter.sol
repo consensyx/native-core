@@ -6,7 +6,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Pausable} from "@openzeppelin/contracts/security/Pausable.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import {ISignatureTransfer} from "@permit2/interfaces/ISignatureTransfer.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {EIP712, ECDSA} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
@@ -31,8 +30,8 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
     /// @dev Address of the Wrapped Ether (WETH9) contract
     address public immutable WETH9;
 
-    /// @dev Uniswap Permit2 contract address
-    address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+    /// @dev Maximum amount deviation in basis points (10%)
+    uint256 constant MAX_AMOUNT_DEVIATION_BPS = 1000;
 
     /// @dev Address of the CreditVault contract that manages credit and native pools
     address public vault;
@@ -72,8 +71,14 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Execute a Request for Quote (RFQ) trade based on market maker's signed quote
-    /// @dev This function facilitates trades between swappers and Native's partnered market makers:
-    function tradeRFQT(RFQTQuote memory quote) external payable override nonReentrant whenNotPaused {
+    /// @param quote The RFQ quote containing trade details and signatures
+    /// @param actualSellerAmount The actual amount of tokens to be sold, can be different from quote amount within deviation limit
+    /// @param actualMinOutputAmount The minimum amount of tokens to be received, overrides quote's amountOutMinimum if provided
+    function tradeRFQT(
+        RFQTQuote memory quote,
+        uint256 actualSellerAmount,
+        uint256 actualMinOutputAmount
+    ) external payable override nonReentrant whenNotPaused {
         require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
         require(block.timestamp <= quote.deadlineTimestamp, ErrorsLib.QuoteExpired());
 
@@ -83,8 +88,29 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
         // address(this) is used for externalSwap
         address payee = isNativePool ? NativeRFQPool(payable(quote.pool)).treasury() : address(this);
 
-        uint256 effectiveSellerTokenAmount =
-            _transferSellerToken(quote.multiHop, payee, quote.sellerToken, quote.sellerTokenAmount, quote.widgetFee);
+        // set effective amount to quote amount first
+        uint256 effectiveSellerTokenAmount = quote.sellerTokenAmount;
+
+        // adjust the effectiveSellerTokenAmount and amountOutMinimum if given
+        if (actualSellerAmount > 0) {
+            uint256 deviation = (
+                actualSellerAmount > quote.sellerTokenAmount
+                    ? actualSellerAmount - quote.sellerTokenAmount
+                    : quote.sellerTokenAmount - actualSellerAmount
+            ) * 10_000 / quote.sellerTokenAmount;
+
+            require(deviation < MAX_AMOUNT_DEVIATION_BPS, "actual amount deviation exceeds 10%");
+
+            effectiveSellerTokenAmount = actualSellerAmount;
+        }
+
+        if (actualMinOutputAmount > 0) {
+            quote.amountOutMinimum = actualMinOutputAmount;
+        }
+
+        // cut widget fee based on the actual amount
+        effectiveSellerTokenAmount =
+            _transferSellerToken(quote.multiHop, payee, quote.sellerToken, effectiveSellerTokenAmount, quote.widgetFee);
 
         if (isNativePool) {
             NativeRFQPool(payable(quote.pool)).tradeRFQT(effectiveSellerTokenAmount, quote);
@@ -114,59 +140,6 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
         } else {
             revert ErrorsLib.InvalidNativePool();
         }
-    }
-
-    /// @notice Executes a trade where the swapper uses Permit2 to authorize token transfer
-    /// @param quote The quote details containing trade parameters (amounts, tokens, deadlines)
-    /// @param swapperPermit Permit2 transfer authorization details
-    /// @param swapperSig Signature from the swapper authorizing the transfer via Permit2
-    function fillOrder(
-        PermitQuote memory quote,
-        ISignatureTransfer.PermitTransferFrom calldata swapperPermit,
-        bytes calldata swapperSig
-    ) external nonReentrant whenNotPaused {
-        // Validate widget fee rate
-        require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
-        require(
-            block.timestamp <= quote.deadline && block.timestamp <= swapperPermit.deadline, ErrorsLib.QuoteExpired()
-        );
-
-        // Verify permit2 token details match the quote
-        require(
-            swapperPermit.permitted.token == quote.tokenIn && swapperPermit.permitted.amount == quote.amountIn,
-            ErrorsLib.Permit2TokenMismatch()
-        );
-
-        // Verify pool is valid
-        require(isNativePools[quote.pool], ErrorsLib.InvalidNativePool());
-
-        // Verify order signature
-        _verifyOrderSignature(quote);
-
-        // Note: Since router will charges widget fee, can't transfer directly to recipient
-        // Execute permit2 transfer: swapper -> router
-        ISignatureTransfer(PERMIT2).permitTransferFrom(
-            swapperPermit,
-            ISignatureTransfer.SignatureTransferDetails({to: address(this), requestedAmount: quote.amountIn}),
-            quote.swapper,
-            swapperSig
-        );
-
-        // Calculate and handle widget fee if applicable
-        uint256 widgetFee = quote.widgetFee.feeRate > 0 ? (quote.amountIn * quote.widgetFee.feeRate) / 10_000 : 0;
-        uint256 effectiveAmountIn = quote.amountIn;
-
-        if (widgetFee > 0) {
-            effectiveAmountIn -= widgetFee;
-            // Transfer widget fee to fee recipient
-            IERC20(quote.tokenIn).safeTransfer(quote.widgetFee.feeRecipient, widgetFee);
-        }
-
-        // Transfer tokens to market maker's treasury
-        IERC20(quote.tokenIn).safeTransfer(NativeRFQPool(payable(quote.pool)).treasury(), effectiveAmountIn);
-
-        // Execute the trade on the RFQ pool
-        NativeRFQPool(payable(quote.pool)).fillOrder(effectiveAmountIn, quote);
     }
 
     /// @notice Unwraps WETH9 to ETH by unwrapping all WETH currently in this contract
@@ -347,29 +320,5 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
         address recoveredSigner = ECDSA.recover(digest, quote.widgetFeeSignature);
 
         require(signers[recoveredSigner], ErrorsLib.InvalidSignature());
-    }
-
-    function _verifyOrderSignature(PermitQuote memory quote) internal view {
-        bytes32 digest = _hashTypedDataV4(
-            keccak256(
-                abi.encode(
-                    FILL_ORDER_SIGNATURE_HASH,
-                    quote.nonce,
-                    quote.recipient,
-                    quote.tokenIn,
-                    quote.tokenOut,
-                    quote.amountIn,
-                    quote.amountOut,
-                    quote.deadline,
-                    quote.widgetFee.feeRecipient,
-                    quote.widgetFee.feeRate
-                )
-            )
-        );
-
-        address recoveredSigner = ECDSA.recover(digest, quote.signature);
-        address recoveredMMSigner = ECDSA.recover(quote.orderBookDigest, quote.orderBookSig);
-
-        require(signers[recoveredSigner] && quote.marketMaker == recoveredMMSigner, ErrorsLib.InvalidSignature());
     }
 }

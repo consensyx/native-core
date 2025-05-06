@@ -8,17 +8,13 @@ import {ISignatureTransfer} from "@permit2/interfaces/ISignatureTransfer.sol";
 interface INativeRouter is IQuote {
     /// @notice Execute an RFQ trade with a signed quote
     /// @param quote The RFQ quote containing trade details
-    function tradeRFQT(RFQTQuote memory quote) external payable;
-
-    /// @notice Execute a trade using permit2 signature for token transfer
-    /// @param quote The quote containing trade parameters
-    /// @param swapperPermit The permit2 transfer authorization
-    /// @param swapperSig The signature authorizing the transfer
-    function fillOrder(
-        PermitQuote memory quote,
-        ISignatureTransfer.PermitTransferFrom calldata swapperPermit,
-        bytes calldata swapperSig
-    ) external;
+    /// @param actualSellerAmount The actual amount of tokens to be sold
+    /// @param actualMinOutputAmount The minimum amount of tokens to be received
+    function tradeRFQT(
+        RFQTQuote memory quote,
+        uint256 actualSellerAmount,
+        uint256 actualMinOutputAmount
+    ) external payable;
 
     /// @notice Emitted when ETH is refunded
     event RefundETH(address recipient, uint256 amount);
@@ -38,9 +34,6 @@ interface INativeRouter is IQuote {
     event WidgetFeeTransfer(
         address widgetFeeRecipient, uint256 widgetFeeRate, uint256 widgetFeeAmount, address widgetFeeToken
     );
-
-    /// @notice Emitted when permit widget fees are withdrawn
-    event WidgetFeesWithdrawn(address indexed recipient, address token, uint256 amount);
 
     /// @notice Emitted when WETH9 is unwrapped
     event UnwrapWETH9(address indexed recipient, uint256 amount);

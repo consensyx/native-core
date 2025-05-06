@@ -36,7 +36,7 @@ contract NativeRouterTest is BaseTest {
 
         vm.startPrank(alice);
         weth.approve(address(router), sellAmount);
-        router.tradeRFQT(quote);
+        router.tradeRFQT(quote, quote.sellerTokenAmount, quote.amountOutMinimum);
         vm.stopPrank();
 
         // Verify results
@@ -77,7 +77,7 @@ contract NativeRouterTest is BaseTest {
 
         vm.startPrank(alice);
         weth.approve(address(router), sellAmount);
-        router.tradeRFQT(quote);
+        router.tradeRFQT(quote, 0, 0);
         vm.stopPrank();
 
         // Verify PMM trade results
