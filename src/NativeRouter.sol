@@ -279,9 +279,11 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
         uint256 fee = widgetFee.feeRate > 0 ? (amountIn * widgetFee.feeRate) / 10_000 : 0;
 
         if (fee > 0) {
-            TransferHelper.safeTransferFrom(
-                sellerToken, hasAlreadyPaid ? address(this) : msg.sender, widgetFee.feeRecipient, fee
-            );
+            if (hasAlreadyPaid) {
+                IERC20(sellerToken).safeTransfer(widgetFee.feeRecipient, fee);
+            } else {
+                TransferHelper.safeTransferFrom(sellerToken, msg.sender, widgetFee.feeRecipient, fee);
+            }
             emit WidgetFeeTransfer(widgetFee.feeRecipient, widgetFee.feeRate, fee, sellerToken);
 
             amountIn -= fee;
