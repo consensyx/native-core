@@ -9,6 +9,7 @@ import {NativeLPToken} from "../../src/NativeLPToken.sol";
 import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 
 contract NativeLPTokenERC20Test is BaseTest {
+    uint256 constant MINIMUM_SHARE = 1000;
     uint256 constant INITIAL_DEPOSIT = 1000e6; // 1000 USDC
     uint256 constant MIN_DEPOSIT = 1e6; // 1 USDC
 
@@ -57,7 +58,7 @@ contract NativeLPTokenERC20Test is BaseTest {
 
         // Verify total supply and shares remain unchanged
         assertEq(lpUSDC.totalSupply(), INITIAL_DEPOSIT, "Total supply should not change");
-        assertEq(lpUSDC.totalShares(), INITIAL_DEPOSIT, "Total shares should not change");
+        assertEq(lpUSDC.totalShares(), INITIAL_DEPOSIT + MINIMUM_SHARE, "Total shares should not change");
     }
 
     function test_transfer_zeroAddress() public {
@@ -144,10 +145,15 @@ contract NativeLPTokenERC20Test is BaseTest {
         depositAmounts[8] = 9_999_999; // 9.999999 USDC
         depositAmounts[9] = 1_234_567; // 1.234567 USDC
 
-        // Calculate expected total (including initial deposit)
-        uint256 expectedTotal = 1_000_000_000; // Initial 1000 USDC
+        // Calculate expected total shares accounting for MINIMUM_SHARE dilution
+        uint256 expectedTotalShares = INITIAL_DEPOSIT + MINIMUM_SHARE; // After Alice's initial deposit
+        uint256 expectedTotalUnderlying = INITIAL_DEPOSIT; // Alice's initial deposit
+
+        // For each subsequent deposit, calculate shares based on current rate
         for (uint256 i = 0; i < 10; i++) {
-            expectedTotal += depositAmounts[i];
+            uint256 sharesToMint = (depositAmounts[i] * expectedTotalShares) / expectedTotalUnderlying;
+            expectedTotalShares += sharesToMint;
+            expectedTotalUnderlying += depositAmounts[i];
         }
 
         // Create users and fund them
@@ -206,14 +212,16 @@ contract NativeLPTokenERC20Test is BaseTest {
         }
 
         // Verify final balance and shares of first user
-        assertEq(lpUSDC.balanceOf(users[0]), user0InitialBalance - totalTransferred, "Sender final balance incorrect");
+        assertApproxEqAbs(
+            lpUSDC.balanceOf(users[0]), user0InitialBalance - totalTransferred, 1, "Sender final balance incorrect"
+        );
         assertEq(
             lpUSDC.sharesOf(users[0]), user0InitialShares - totalSharesTransferred, "Sender final shares incorrect"
         );
 
         // Verify total supply and shares remain unchanged
-        assertEq(lpUSDC.totalUnderlying(), expectedTotal, "Total underlying should not change");
-        assertEq(lpUSDC.totalShares(), expectedTotal, "Total shares should not change");
+        assertEq(lpUSDC.totalUnderlying(), expectedTotalUnderlying, "Total underlying should not change");
+        assertEq(lpUSDC.totalShares(), expectedTotalShares, "Total shares should not change");
     }
 
     function test_transferFrom() public {

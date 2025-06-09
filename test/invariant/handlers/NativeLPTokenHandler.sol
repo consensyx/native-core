@@ -7,6 +7,7 @@ import {CommonBase} from "forge-std/Base.sol";
 import {NativeLPToken} from "../../../src/NativeLPToken.sol";
 import {AddressSet, LibAddressSet} from "../helpers/AddressSet.sol";
 import {MockERC20} from "../../../src/test/MockERC20.sol";
+import "../../../src/libraries/ConstantsLib.sol";
 
 import {console} from "forge-std/console.sol";
 
@@ -50,6 +51,8 @@ contract NativeLPTokenHandler is CommonBase, StdUtils, StdInvariant {
         console.log("Before deposit - ghost_totalUnderlying:", ghost_totalUnderlying);
 
         uint256 sharesBefore = lpToken.shares(who);
+        uint256 totalSharesBefore = lpToken.totalShares();
+        bool isFirstDeposit = (totalSharesBefore == 0);
 
         // Mint tokens for deposit
         vm.prank(deployer);
@@ -71,7 +74,14 @@ contract NativeLPTokenHandler is CommonBase, StdUtils, StdInvariant {
         vm.stopPrank();
 
         // Update ghost variables
-        ghost_sumOfShares += (lpToken.shares(who) - sharesBefore);
+        uint256 userSharesGained = lpToken.shares(who) - sharesBefore;
+        ghost_sumOfShares += userSharesGained;
+
+        // On first deposit, also track MINIMUM_SHARE minted to address(0)
+        if (isFirstDeposit) {
+            ghost_sumOfShares += MINIMUM_SHARE;
+        }
+
         ghost_totalDeposits += amount;
         ghost_vaultBalance += amount;
         ghost_totalUnderlying += amount;

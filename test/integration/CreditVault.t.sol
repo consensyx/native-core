@@ -898,14 +898,16 @@ contract CreditVaultTest is BaseTest {
 
         vm.startPrank(alice);
         lpUSDC.deposit(amount);
+        // Get Alice's actual lpUSDC balance after deposit (accounting for MINIMUM_SHARE dilution)
+        uint256 aliceLpBalance = lpUSDC.balanceOf(alice);
         // Approve creditVault to spend lpUSDC right after deposit
-        lpUSDC.approve(address(creditVault), amount);
+        lpUSDC.approve(address(creditVault), aliceLpBalance);
 
         vm.stopPrank();
 
-        // Prepare token array for adding collateral
+        // Prepare token array for adding collateral using actual balance
         ICreditVault.TokenAmountUint[] memory tokens = new ICreditVault.TokenAmountUint[](1);
-        tokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: amount});
+        tokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: aliceLpBalance});
 
         // Record initial collateral for bob
         uint256 initialBobCollateral = creditVault.collateral(bob, address(lpUSDC));
@@ -927,7 +929,7 @@ contract CreditVaultTest is BaseTest {
         // Verify Bob's collateral increased
         assertEq(
             creditVault.collateral(bob, address(lpUSDC)),
-            initialBobCollateral + amount,
+            initialBobCollateral + aliceLpBalance,
             "Collateral not added correctly for other user"
         );
     }
@@ -951,11 +953,13 @@ contract CreditVaultTest is BaseTest {
 
         vm.startPrank(alice);
         lpUSDC.deposit(amount);
-        lpUSDC.approve(address(creditVault), amount);
+        // Get Alice's actual lpUSDC balance after deposit (accounting for MINIMUM_SHARE dilution)
+        uint256 aliceLpBalance = lpUSDC.balanceOf(alice);
+        lpUSDC.approve(address(creditVault), aliceLpBalance);
 
         // Add collateral
         ICreditVault.TokenAmountUint[] memory addTokens = new ICreditVault.TokenAmountUint[](1);
-        addTokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: amount});
+        addTokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: aliceLpBalance});
         creditVault.addCollateral(addTokens, alice);
         vm.stopPrank();
 
@@ -963,7 +967,7 @@ contract CreditVaultTest is BaseTest {
         ICreditVault.TokenAmountUint[] memory removeTokens = new ICreditVault.TokenAmountUint[](1);
         removeTokens[0] = ICreditVault.TokenAmountUint({
             token: address(lpUSDC),
-            amount: amount / 2 // Remove half of the collateral
+            amount: aliceLpBalance / 2 // Remove half of the collateral
         });
 
         ICreditVault.RemoveCollateralRequest memory request = ICreditVault.RemoveCollateralRequest({
@@ -990,11 +994,12 @@ contract CreditVaultTest is BaseTest {
         // Verify states after removal
         assertEq(
             creditVault.collateral(alice, address(lpUSDC)),
-            initialCollateral - amount / 2,
+            initialCollateral - aliceLpBalance / 2,
             "Collateral not reduced correctly"
         );
         // assertEq(lpUSDC.balanceOf(alice), initialBalance + amount / 2, "LP tokens not returned correctly");
-        assertEq(lpUSDC.balanceOf(aliceRecipient), amount / 2, "LP tokens not returned correctly");
+        // Use approx equal due to potential rounding errors (1 wei tolerance)
+        assertApproxEqAbs(lpUSDC.balanceOf(aliceRecipient), aliceLpBalance / 2, 1, "LP tokens not returned correctly");
 
         request = ICreditVault.RemoveCollateralRequest({
             nonce: 1,
@@ -1163,10 +1168,12 @@ contract CreditVaultTest is BaseTest {
         vm.startPrank(alice);
         USDC.approve(address(lpUSDC), amount);
         lpUSDC.deposit(amount);
-        lpUSDC.approve(address(creditVault), amount);
+        // Get Alice's actual lpUSDC balance after deposit (accounting for MINIMUM_SHARE dilution)
+        uint256 aliceLpBalance = lpUSDC.balanceOf(alice);
+        lpUSDC.approve(address(creditVault), aliceLpBalance);
 
         ICreditVault.TokenAmountUint[] memory addTokens = new ICreditVault.TokenAmountUint[](1);
-        addTokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: amount});
+        addTokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: aliceLpBalance});
         creditVault.addCollateral(addTokens, alice);
         vm.stopPrank();
 
@@ -1175,7 +1182,7 @@ contract CreditVaultTest is BaseTest {
         positionUpdates[0] = ICreditVault.TokenAmountInt({token: address(USDC), amount: -500e6});
 
         ICreditVault.TokenAmountUint[] memory claimCollaterals = new ICreditVault.TokenAmountUint[](1);
-        claimCollaterals[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: amount / 2});
+        claimCollaterals[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: aliceLpBalance / 2});
 
         ICreditVault.LiquidationRequest memory request = ICreditVault.LiquidationRequest({
             nonce: 0,
@@ -1302,11 +1309,13 @@ contract CreditVaultTest is BaseTest {
 
         vm.startPrank(alice);
         lpUSDC.deposit(amount);
-        lpUSDC.approve(address(creditVault), amount);
+        // Get Alice's actual lpUSDC balance after deposit (accounting for MINIMUM_SHARE dilution)
+        uint256 aliceLpBalance = lpUSDC.balanceOf(alice);
+        lpUSDC.approve(address(creditVault), aliceLpBalance);
 
         // Add collateral
         ICreditVault.TokenAmountUint[] memory addTokens = new ICreditVault.TokenAmountUint[](1);
-        addTokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: amount});
+        addTokens[0] = ICreditVault.TokenAmountUint({token: address(lpUSDC), amount: aliceLpBalance});
         creditVault.addCollateral(addTokens, alice);
         vm.stopPrank();
 
@@ -1406,8 +1415,11 @@ contract CreditVaultTest is BaseTest {
         assertEq(cap.limit, 0, "Limit should be unlimited");
         assertEq(cap.lastDay, block.timestamp / 86_400, "Last day should be current day");
 
+        // Check remaining collateral to ensure we don't try to remove more than available
+        uint256 remainingCollateral = creditVault.collateral(alice, address(lpUSDC));
+
         request.nonce = 5;
-        removeTokens[0].amount = 5000e6;
+        removeTokens[0].amount = remainingCollateral; // Use remaining collateral instead of hardcoded 5000e6
         digest = SignatureUtils.generateRemoveCollateralSignature(request, aliceRecipient, address(creditVault));
         (v, r, s) = vm.sign(deployerKey, digest);
         signature = abi.encodePacked(r, s, v);
@@ -1417,7 +1429,7 @@ contract CreditVaultTest is BaseTest {
         creditVault.removeCollateral(request, signature);
 
         cap = _getRebalanceCap(alice, address(lpUSDC));
-        assertEq(cap.used, 5000e6, "Used should be 5000e6");
+        assertEq(cap.used, remainingCollateral, "Used should be remaining collateral amount");
         assertEq(cap.limit, 0, "Limit should be unlimited");
         assertEq(cap.lastDay, block.timestamp / 86_400, "Last day should be current day");
     }

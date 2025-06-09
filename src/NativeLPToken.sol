@@ -36,18 +36,21 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
     /// @notice The number of decimals for this token, matching the underlying token's decimals
     uint8 private _decimals;
 
-    /// @notice Early withdrawal fee in basis points (1 bip = 0.01%)
-    /// @dev Applied to prevent front-running by users who deposit right before yield distribution and immediately redeem after
-    uint256 public earlyWithdrawFeeBips;
-
     /// @notice Total amount of underlying assets deposited by LPs
     uint256 public totalUnderlying;
 
     /// @notice Total number of shares issued
     uint256 public totalShares;
 
+    /// @notice Early withdrawal fee in basis points (1 bip = 0.01%)
+    /// @dev Applied to prevent front-running by users who deposit right before yield distribution and immediately redeem after
+    uint256 public earlyWithdrawFeeBips;
+
+    /// @notice Accumulated early withdrawal fee
+    uint256 public accEarlyWithdrawFee;
+
     /// @notice Minimum time interval between deposit and redeem (in seconds)
-    uint256 public minRedeemInterval = 8 hours;
+    uint256 public minRedeemInterval;
 
     /// @notice Minimum amount required for deposits
     uint256 public minDeposit;
@@ -106,6 +109,9 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
 
     /// @notice Event emitted when an address's redeem cooldown exemption status is updated
     event RedeemCooldownExemptUpdated(address indexed account, bool status);
+
+    /// @notice Event emitted when early withdrawal fees are withdrawn
+    event EarlyWithdrawFeeWithdrawn(address indexed recipient, uint256 amount);
 
     /*//////////////////////////////////////////////////////////////////////////
                                      CONSTRUCTOR
@@ -252,6 +258,10 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         return _decimals;
     }
 
+    /*//////////////////////////////////////////////////////////////////////////
+                                    OWNER ONLY OPERATIONS
+    //////////////////////////////////////////////////////////////////////////*/
+
     /// @notice Sets the minimum deposit amount
     /// @param _minDeposit New minimum deposit amount
     /// @dev Can only be called by the owner
@@ -303,6 +313,19 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         emit RedeemCooldownExemptUpdated(account, status);
     }
 
+    /// @notice Withdraws accumulated early withdrawal fees
+    /// @param recipient The address to receive the withdrawn fees
+    function withdrawEarlyFees(address recipient) external onlyOwner {
+        require(recipient != address(0), ErrorsLib.ZeroAddress());
+
+        // Transfer fees from credit vault to recipient
+        CreditVault(creditVault).pay(recipient, accEarlyWithdrawFee);
+
+        emit EarlyWithdrawFeeWithdrawn(recipient, accEarlyWithdrawFee);
+
+        accEarlyWithdrawFee = 0;
+    }
+
     /*//////////////////////////////////////////////////////////////////////////
                                      PAUSE OPERATIONS
     //////////////////////////////////////////////////////////////////////////*/
@@ -352,6 +375,7 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
 
         // Calculate shares to mint
         if (totalShares == 0) {
+            _mintShares(address(0), MINIMUM_SHARE);
             sharesToMint = amount; // Initial shares 1:1
         } else {
             sharesToMint = (amount * totalShares) / totalUnderlying;
@@ -373,32 +397,33 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         require(shares[msg.sender] >= sharesToBurn, ErrorsLib.InsufficientShares());
 
         // Calculate underlying amount
-        underlyingAmount = (sharesToBurn * totalUnderlying) / totalShares;
+        uint256 grossUnderlyingAmount = (sharesToBurn * totalUnderlying) / totalShares;
+        underlyingAmount = grossUnderlyingAmount;
 
         if (
             block.timestamp < lastDepositTimestamp[msg.sender] + minRedeemInterval && earlyWithdrawFeeBips > 0
                 && !redeemCooldownExempt[msg.sender]
         ) {
-            underlyingAmount -= (underlyingAmount * earlyWithdrawFeeBips) / 10_000;
+            uint256 fee = (underlyingAmount * earlyWithdrawFeeBips) / 10_000;
+
+            accEarlyWithdrawFee += fee;
+            underlyingAmount -= fee;
         }
 
         // Burn shares first
         _burnShares(msg.sender, sharesToBurn);
 
         // Transfer underlying from vault to msg.sender
-        uint256 balanceBefore = underlying.balanceOf(creditVault);
         CreditVault(creditVault).pay(to, underlyingAmount);
-        underlyingAmount = balanceBefore - underlying.balanceOf(creditVault);
 
         // Update total underlying
-        totalUnderlying -= underlyingAmount;
+        totalUnderlying -= grossUnderlyingAmount;
 
-        emit SharesBurned(msg.sender, to, sharesToBurn, underlyingAmount);
+        emit SharesBurned(msg.sender, to, sharesToBurn, grossUnderlyingAmount);
     }
 
     function _mintShares(address to, uint256 shareAmount) internal {
         require(shareAmount > 0, ErrorsLib.ZeroAmount());
-        require(to != address(0), ErrorsLib.ZeroAddress());
 
         shares[to] += shareAmount;
         totalShares += shareAmount;

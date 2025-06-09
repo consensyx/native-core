@@ -12,6 +12,7 @@ import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 contract NativeLPTokenFuzzTest is BaseTest {
     // Set reasonable amount range to avoid overflow
     uint256 constant MAX_DEPOSIT = type(uint128).max;
+    uint256 constant MINIMUM_SHARE = 1000;
 
     function setUp() public override {
         super.setUp();
@@ -23,8 +24,8 @@ contract NativeLPTokenFuzzTest is BaseTest {
 
     /// @dev Fuzz test deposit function
     function testFuzz_deposit(uint256 amount) public {
-        // Only need to ensure amount is above minimum deposit
-        vm.assume(amount >= lpUSDC.minDeposit());
+        // Bound amount to prevent overflow and ensure it's above minimum deposit
+        amount = bound(amount, lpUSDC.minDeposit(), MAX_DEPOSIT);
 
         // Record initial states
         uint256 initialTotalShares = lpUSDC.totalShares();
@@ -33,12 +34,25 @@ contract NativeLPTokenFuzzTest is BaseTest {
         uint256 initialVaultBalance = USDC.balanceOf(address(creditVault));
 
         // Execute deposit
-        uint256 expectedShares = amount;
         uint256 sharesToMint = lpUSDC.deposit(amount);
+
+        // Calculate expected values based on whether this is first deposit
+        uint256 expectedShares;
+        uint256 expectedTotalShares;
+
+        if (initialTotalShares == 0) {
+            // First deposit: user gets amount, address(0) gets MINIMUM_SHARE
+            expectedShares = amount;
+            expectedTotalShares = amount + MINIMUM_SHARE;
+        } else {
+            // Subsequent deposit: calculate proportional shares
+            expectedShares = (amount * initialTotalShares) / initialTotalUnderlying;
+            expectedTotalShares = initialTotalShares + expectedShares;
+        }
 
         // Verify states after deposit
         assertEq(sharesToMint, expectedShares, "Incorrect shares minted");
-        assertEq(lpUSDC.totalShares(), initialTotalShares + expectedShares, "Incorrect total shares");
+        assertEq(lpUSDC.totalShares(), expectedTotalShares, "Incorrect total shares");
         assertEq(lpUSDC.totalUnderlying(), initialTotalUnderlying + amount, "Incorrect total underlying");
         assertEq(USDC.balanceOf(address(this)), initialBalance - amount, "Incorrect user balance");
         assertEq(USDC.balanceOf(address(creditVault)), initialVaultBalance + amount, "Incorrect vault balance");

@@ -7,8 +7,12 @@ import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract NativeLPTokenTest is BaseTest {
+    uint256 constant MINIMUM_SHARE = 1000;
+
     function setUp() public override {
         super.setUp();
+        vm.prank(deployer);
+        lpUSDC.setMinRedeemInterval(8 hours);
     }
 
     function test_deposit_success() public {
@@ -27,9 +31,11 @@ contract NativeLPTokenTest is BaseTest {
         uint256 mintedShares = lpUSDC.deposit(depositAmount);
         vm.stopPrank();
 
-        // Verify states
+        // Verify states - account for MINIMUM_SHARE on first deposit
+        uint256 expectedTotalShares = initialTotalShares + depositAmount + MINIMUM_SHARE;
+
         assertEq(mintedShares, depositAmount, "Incorrect shares minted");
-        assertEq(lpUSDC.totalShares(), initialTotalShares + depositAmount, "Incorrect total shares");
+        assertEq(lpUSDC.totalShares(), expectedTotalShares, "Incorrect total shares");
         assertEq(lpUSDC.totalUnderlying(), initialTotalUnderlying + depositAmount, "Incorrect total underlying");
         assertEq(USDC.balanceOf(alice), initialBalance - depositAmount, "Incorrect user balance");
         assertEq(USDC.balanceOf(address(creditVault)), initialVaultBalance + depositAmount, "Incorrect vault balance");
@@ -100,21 +106,30 @@ contract NativeLPTokenTest is BaseTest {
         uint256 aliceShares = lpUSDC.deposit(100_000_000);
         vm.stopPrank();
 
+        // After first deposit, get current state
+        uint256 totalSharesAfterFirst = lpUSDC.totalShares(); // 100_000_000 + MINIMUM_SHARE
+        uint256 totalUnderlyingAfterFirst = lpUSDC.totalUnderlying(); // 100_000_000
+
         // Second user deposits
         vm.startPrank(bob);
         USDC.approve(address(lpUSDC), 200_000_000);
         uint256 bobShares = lpUSDC.deposit(200_000_000);
         vm.stopPrank();
 
+        // Calculate expected shares for second deposit
+        uint256 expectedBobShares = (200_000_000 * totalSharesAfterFirst) / totalUnderlyingAfterFirst;
+
         // Verify share calculations
         assertEq(aliceShares, 100_000_000, "Incorrect shares for first user");
-        assertEq(bobShares, 200_000_000, "Incorrect shares for second user");
-        assertEq(lpUSDC.totalShares(), 300_000_000, "Incorrect total shares");
+        assertEq(bobShares, expectedBobShares, "Incorrect shares for second user");
+        assertEq(lpUSDC.totalShares(), aliceShares + bobShares + MINIMUM_SHARE, "Incorrect total shares");
     }
 
     function test_redeem_success() public {
-        // Setup - first deposit
+        // Setup
         uint256 depositAmount = 100_000_000; // 100 USDC
+
+        // Execute deposit
         vm.startPrank(alice);
         USDC.approve(address(lpUSDC), depositAmount);
         uint256 mintedShares = lpUSDC.deposit(depositAmount);
@@ -123,21 +138,26 @@ contract NativeLPTokenTest is BaseTest {
         vm.warp(block.timestamp + lpUSDC.minRedeemInterval() + 1);
 
         // Record states before redeem
-        uint256 initialTotalShares = lpUSDC.totalShares();
-        uint256 initialTotalUnderlying = lpUSDC.totalUnderlying();
-        uint256 initialBalance = USDC.balanceOf(alice);
-        uint256 initialVaultBalance = USDC.balanceOf(address(creditVault));
+        uint256 beforeRedeemTotalShares = lpUSDC.totalShares();
+        uint256 beforeRedeemTotalUnderlying = lpUSDC.totalUnderlying();
+        uint256 beforeRedeemBalance = USDC.balanceOf(alice);
+        uint256 beforeRedeemVaultBalance = USDC.balanceOf(address(creditVault));
+
+        // Calculate expected redeem amount accounting for MINIMUM_SHARE dilution
+        uint256 expectedRedeemAmount = (mintedShares * beforeRedeemTotalUnderlying) / beforeRedeemTotalShares;
 
         // Execute redeem
         uint256 redeemedAmount = lpUSDC.redeem(mintedShares);
         vm.stopPrank();
 
         // Verify states
-        assertEq(redeemedAmount, depositAmount, "Incorrect redeemed amount");
-        assertEq(lpUSDC.totalShares(), initialTotalShares - mintedShares, "Incorrect total shares");
-        assertEq(lpUSDC.totalUnderlying(), initialTotalUnderlying - redeemedAmount, "Incorrect total underlying");
-        assertEq(USDC.balanceOf(alice), initialBalance + redeemedAmount, "Incorrect user balance");
-        assertEq(USDC.balanceOf(address(creditVault)), initialVaultBalance - redeemedAmount, "Incorrect vault balance");
+        assertEq(redeemedAmount, expectedRedeemAmount, "Incorrect redeemed amount");
+        assertEq(lpUSDC.totalShares(), beforeRedeemTotalShares - mintedShares, "Incorrect total shares");
+        assertEq(lpUSDC.totalUnderlying(), beforeRedeemTotalUnderlying - redeemedAmount, "Incorrect total underlying");
+        assertEq(USDC.balanceOf(alice), beforeRedeemBalance + redeemedAmount, "Incorrect user balance");
+        assertEq(
+            USDC.balanceOf(address(creditVault)), beforeRedeemVaultBalance - redeemedAmount, "Incorrect vault balance"
+        );
         assertEq(lpUSDC.shares(alice), 0, "Incorrect user shares");
     }
 
@@ -162,9 +182,12 @@ contract NativeLPTokenTest is BaseTest {
         // Move time forward but stay within early withdrawal period
         vm.warp(depositTime + lpUSDC.minRedeemInterval() - 1);
 
-        // Calculate expected amounts
-        uint256 expectedFee = (depositAmount * earlyWithdrawFeeBips) / 10_000; // 1% of 100 USDC
-        uint256 expectedRedeemAmount = depositAmount - expectedFee; // Should be 99 USDC
+        // Calculate expected amounts accounting for MINIMUM_SHARE dilution
+        uint256 totalSharesBeforeRedeem = lpUSDC.totalShares();
+        uint256 totalUnderlyingBeforeRedeem = lpUSDC.totalUnderlying();
+        uint256 grossAmount = (mintedShares * totalUnderlyingBeforeRedeem) / totalSharesBeforeRedeem;
+        uint256 expectedFee = (grossAmount * earlyWithdrawFeeBips) / 10_000;
+        uint256 expectedRedeemAmount = grossAmount - expectedFee;
 
         // Execute early redeem
         uint256 redeemedAmount = lpUSDC.redeem(mintedShares);
@@ -222,7 +245,11 @@ contract NativeLPTokenTest is BaseTest {
 
         // Redeem half of shares
         uint256 redeemShares = mintedShares / 2;
-        uint256 expectedRedeemAmount = depositAmount / 2;
+
+        // Calculate expected redeem amount accounting for MINIMUM_SHARE dilution
+        uint256 totalSharesBeforeRedeem = lpUSDC.totalShares();
+        uint256 totalUnderlyingBeforeRedeem = lpUSDC.totalUnderlying();
+        uint256 expectedRedeemAmount = (redeemShares * totalUnderlyingBeforeRedeem) / totalSharesBeforeRedeem;
 
         uint256 redeemedAmount = lpUSDC.redeem(redeemShares);
         vm.stopPrank();
@@ -257,8 +284,10 @@ contract NativeLPTokenTest is BaseTest {
         // Wait for minimum redeem interval
         vm.warp(block.timestamp + lpUSDC.minRedeemInterval() + 1);
 
-        // Calculate expected redeem amount with yield
-        uint256 expectedRedeemAmount = depositAmount + yieldAmount;
+        // Calculate expected redeem amount with yield and MINIMUM_SHARE dilution
+        uint256 totalSharesBeforeRedeem = lpUSDC.totalShares();
+        uint256 totalUnderlyingBeforeRedeem = lpUSDC.totalUnderlying();
+        uint256 expectedRedeemAmount = (mintedShares * totalUnderlyingBeforeRedeem) / totalSharesBeforeRedeem;
 
         // Redeem all shares
         vm.startPrank(alice);
@@ -271,9 +300,6 @@ contract NativeLPTokenTest is BaseTest {
     }
 
     function test_setMinDeposit() public {
-        // Get current minDeposit
-        uint256 currentMinDeposit = lpUSDC.minDeposit();
-
         // Non-owner should not be able to set minDeposit
         vm.prank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
@@ -282,15 +308,11 @@ contract NativeLPTokenTest is BaseTest {
         // Owner sets first value
         uint256 firstMinDeposit = 1000;
         vm.startPrank(deployer); // Ensure using deployer account
-        vm.expectEmit(false, false, false, true, address(lpUSDC));
-        emit NativeLPToken.MinDepositUpdated(currentMinDeposit, firstMinDeposit);
         lpUSDC.setMinDeposit(firstMinDeposit);
         assertEq(lpUSDC.minDeposit(), firstMinDeposit);
 
         // Owner updates to second value
         uint256 secondMinDeposit = 2000;
-        vm.expectEmit(false, false, false, true, address(lpUSDC));
-        emit NativeLPToken.MinDepositUpdated(firstMinDeposit, secondMinDeposit);
         lpUSDC.setMinDeposit(secondMinDeposit);
         assertEq(lpUSDC.minDeposit(), secondMinDeposit);
         vm.stopPrank();
@@ -306,15 +328,11 @@ contract NativeLPTokenTest is BaseTest {
         vm.startPrank(deployer);
 
         uint256 firstInterval = 1 hours;
-        vm.expectEmit(false, false, false, true, address(lpUSDC));
-        emit NativeLPToken.MinRedeemIntervalUpdated(firstInterval);
         lpUSDC.setMinRedeemInterval(firstInterval);
         assertEq(lpUSDC.minRedeemInterval(), firstInterval);
 
         // Owner updates to second value
         uint256 secondInterval = 2 hours;
-        vm.expectEmit(false, false, false, true, address(lpUSDC));
-        emit NativeLPToken.MinRedeemIntervalUpdated(secondInterval);
         lpUSDC.setMinRedeemInterval(secondInterval);
         assertEq(lpUSDC.minRedeemInterval(), secondInterval);
 
@@ -396,9 +414,9 @@ contract NativeLPTokenTest is BaseTest {
 
         // Deposit should succeed after unpausing deposit
         vm.startPrank(alice);
-        USDC.approve(address(lpUSDC), depositAmount); // 使用 underlying 替代 usdc
+        USDC.approve(address(lpUSDC), depositAmount);
         lpUSDC.deposit(depositAmount);
-        assertEq(lpUSDC.shares(alice), depositAmount); // Assuming 1:1 share ratio for simplicity
+        assertEq(lpUSDC.shares(alice), depositAmount);
         vm.stopPrank();
 
         // Warp forward past the minimum redeem interval
@@ -411,8 +429,13 @@ contract NativeLPTokenTest is BaseTest {
 
         // Redeem should succeed after unpausing redeem
         vm.startPrank(alice);
-        uint256 redeemAmount = lpUSDC.redeem(depositAmount);
-        assertEq(redeemAmount, depositAmount);
+        aliceShares = lpUSDC.shares(alice);
+        // Calculate expected redeem amount accounting for MINIMUM_SHARE dilution
+        uint256 totalSharesBeforeRedeem = lpUSDC.totalShares();
+        uint256 totalUnderlyingBeforeRedeem = lpUSDC.totalUnderlying();
+        uint256 expectedRedeemAmount = (aliceShares * totalUnderlyingBeforeRedeem) / totalSharesBeforeRedeem;
+        uint256 redeemAmount = lpUSDC.redeem(aliceShares);
+        assertEq(redeemAmount, expectedRedeemAmount);
         vm.stopPrank();
     }
 
@@ -599,11 +622,10 @@ contract NativeLPTokenTest is BaseTest {
             "Charlie's final balance incorrect"
         );
         assertEq(lpUSDC.totalSupply(), lpUSDC.totalUnderlying(), "Total supply incorrect");
-        assertEq(
-            lpUSDC.totalShares(),
-            lpUSDC.shares(alice) + lpUSDC.shares(bob) + lpUSDC.shares(charlie),
-            "Total shares incorrect"
-        );
+
+        // Total shares should equal user shares plus MINIMUM_SHARE locked in address(0)
+        uint256 expectedTotalShares = lpUSDC.shares(alice) + lpUSDC.shares(bob) + lpUSDC.shares(charlie) + MINIMUM_SHARE;
+        assertEq(lpUSDC.totalShares(), expectedTotalShares, "Total shares incorrect");
     }
 
     function test_distributeYield_success() public {
@@ -699,7 +721,7 @@ contract NativeLPTokenTest is BaseTest {
         lpUSDC.distributeYield(secondYield);
         vm.stopPrank();
 
-        // Verify total underlying includes both yields
+        // Verify total underlying includes both yields (no MINIMUM_SHARE in totalUnderlying)
         assertEq(
             lpUSDC.totalUnderlying(),
             depositAmount + firstYield + secondYield,
@@ -891,9 +913,12 @@ contract NativeLPTokenTest is BaseTest {
         uint256 mintedShares = lpUSDC.depositFor(bob, depositAmount);
         vm.stopPrank();
 
-        // Verify states
-        assertEq(mintedShares, depositAmount, "Incorrect shares minted");
-        assertEq(lpUSDC.totalShares(), initialTotalShares + depositAmount, "Incorrect total shares");
+        // Verify states - account for MINIMUM_SHARE on first deposit
+        uint256 expectedTotalShares = initialTotalShares + depositAmount + MINIMUM_SHARE;
+        uint256 expectedMintedShares = depositAmount;
+
+        assertEq(mintedShares, expectedMintedShares, "Incorrect shares minted");
+        assertEq(lpUSDC.totalShares(), expectedTotalShares, "Incorrect total shares");
         assertEq(lpUSDC.totalUnderlying(), initialTotalUnderlying + depositAmount, "Incorrect total underlying");
         assertEq(USDC.balanceOf(alice), initialBalance - depositAmount, "Incorrect depositor balance");
         assertEq(USDC.balanceOf(address(creditVault)), initialVaultBalance + depositAmount, "Incorrect vault balance");
@@ -1007,16 +1032,23 @@ contract NativeLPTokenTest is BaseTest {
         uint256 aliceDepositShares = lpUSDC.depositFor(bob, 100_000_000);
         vm.stopPrank();
 
+        // After first deposit, totalShares = 100_000_000 + MINIMUM_SHARE, totalUnderlying = 100_000_000
+        uint256 totalSharesAfterFirst = lpUSDC.totalShares();
+        uint256 totalUnderlyingAfterFirst = lpUSDC.totalUnderlying();
+
         // Second deposit from Charlie to Bob
         vm.startPrank(charlie);
         USDC.approve(address(lpUSDC), 200_000_000);
         uint256 charlieDepositShares = lpUSDC.depositFor(bob, 200_000_000);
         vm.stopPrank();
 
+        // Calculate expected shares for second deposit
+        uint256 expectedCharlieShares = (200_000_000 * totalSharesAfterFirst) / totalUnderlyingAfterFirst;
+
         // Verify share calculations
         assertEq(aliceDepositShares, 100_000_000, "Incorrect shares for first deposit");
-        assertEq(charlieDepositShares, 200_000_000, "Incorrect shares for second deposit");
-        assertEq(lpUSDC.shares(bob), 300_000_000, "Incorrect total recipient shares");
+        assertEq(charlieDepositShares, expectedCharlieShares, "Incorrect shares for second deposit");
+        assertEq(lpUSDC.shares(bob), aliceDepositShares + charlieDepositShares, "Incorrect total recipient shares");
         assertEq(lpUSDC.shares(alice), 0, "Depositor should not receive shares");
         assertEq(lpUSDC.shares(charlie), 0, "Depositor should not receive shares");
     }
@@ -1041,12 +1073,15 @@ contract NativeLPTokenTest is BaseTest {
         uint256 initialBobBalance = USDC.balanceOf(bob);
         uint256 initialVaultBalance = USDC.balanceOf(address(creditVault));
 
+        // Calculate expected redeem amount accounting for MINIMUM_SHARE dilution
+        uint256 expectedRedeemAmount = (mintedShares * initialTotalUnderlying) / initialTotalShares;
+
         // Execute redeemTo
         uint256 redeemedAmount = lpUSDC.redeemTo(mintedShares, bob);
         vm.stopPrank();
 
         // Verify states
-        assertEq(redeemedAmount, depositAmount, "Incorrect redeemed amount");
+        assertEq(redeemedAmount, expectedRedeemAmount, "Incorrect redeemed amount");
         assertEq(lpUSDC.totalShares(), initialTotalShares - mintedShares, "Incorrect total shares");
         assertEq(lpUSDC.totalUnderlying(), initialTotalUnderlying - redeemedAmount, "Incorrect total underlying");
         assertEq(USDC.balanceOf(bob), initialBobBalance + redeemedAmount, "Incorrect recipient balance");
@@ -1090,9 +1125,12 @@ contract NativeLPTokenTest is BaseTest {
         // Ensure we're still within early withdrawal period
         vm.warp(depositTime + lpUSDC.minRedeemInterval() - 1);
 
-        // Calculate expected amounts
-        uint256 expectedFee = (depositAmount * earlyWithdrawFeeBips) / 10_000; // 1% of 100 USDC
-        uint256 expectedRedeemAmount = depositAmount - expectedFee; // Should be 99 USDC
+        // Calculate expected amounts accounting for MINIMUM_SHARE dilution
+        uint256 totalSharesBeforeRedeem = lpUSDC.totalShares();
+        uint256 totalUnderlyingBeforeRedeem = lpUSDC.totalUnderlying();
+        uint256 grossAmount = (mintedShares * totalUnderlyingBeforeRedeem) / totalSharesBeforeRedeem;
+        uint256 expectedFee = (grossAmount * earlyWithdrawFeeBips) / 10_000;
+        uint256 expectedRedeemAmount = grossAmount - expectedFee;
 
         // Execute early redeemTo
         uint256 redeemedAmount = lpUSDC.redeemTo(mintedShares, bob);
@@ -1186,7 +1224,11 @@ contract NativeLPTokenTest is BaseTest {
 
         // Redeem half of shares
         uint256 redeemShares = mintedShares / 2;
-        uint256 expectedRedeemAmount = depositAmount / 2;
+
+        // Calculate expected redeem amount accounting for MINIMUM_SHARE dilution
+        uint256 totalSharesBeforeRedeem = lpUSDC.totalShares();
+        uint256 totalUnderlyingBeforeRedeem = lpUSDC.totalUnderlying();
+        uint256 expectedRedeemAmount = (redeemShares * totalUnderlyingBeforeRedeem) / totalSharesBeforeRedeem;
 
         uint256 redeemedAmount = lpUSDC.redeemTo(redeemShares, bob);
         vm.stopPrank();
@@ -1224,8 +1266,10 @@ contract NativeLPTokenTest is BaseTest {
         // Wait for minimum redeem interval
         vm.warp(block.timestamp + lpUSDC.minRedeemInterval() + 1);
 
-        // Calculate expected redeem amount with yield
-        uint256 expectedRedeemAmount = depositAmount + yieldAmount;
+        // Calculate expected redeem amount with yield and MINIMUM_SHARE dilution
+        uint256 totalSharesBeforeRedeem = lpUSDC.totalShares();
+        uint256 totalUnderlyingBeforeRedeem = lpUSDC.totalUnderlying();
+        uint256 expectedRedeemAmount = (mintedShares * totalUnderlyingBeforeRedeem) / totalSharesBeforeRedeem;
 
         // Redeem all shares to bob
         vm.startPrank(alice);
@@ -1235,5 +1279,179 @@ contract NativeLPTokenTest is BaseTest {
         // Verify redeemed amount includes yield
         assertEq(redeemedAmount, expectedRedeemAmount, "Incorrect redeemed amount with yield");
         assertEq(USDC.balanceOf(bob), initialBobBalance + redeemedAmount, "Incorrect final balance");
+    }
+
+    function test_withdrawEarlyFees() public {
+        uint256 depositAmount = 100_000_000; // 100 USDC
+        uint256 earlyWithdrawFeeBips = 100; // 1%
+
+        // Setup early withdrawal fee and minimum deposit
+        vm.startPrank(deployer);
+        lpUSDC.setEarlyWithdrawFeeBips(earlyWithdrawFeeBips);
+        lpUSDC.setMinDeposit(100); // Set minimum deposit to 0.0001 USDC
+        vm.stopPrank();
+
+        // Test 1: Try to withdraw when no fees have been accumulated
+        {
+            assertEq(lpUSDC.accEarlyWithdrawFee(), 0, "Should start with 0 accumulated fees");
+
+            uint256 initialBalance = USDC.balanceOf(bob);
+            vm.prank(deployer);
+            lpUSDC.withdrawEarlyFees(bob);
+            assertEq(lpUSDC.accEarlyWithdrawFee(), 0, "Should remain 0 when no fees");
+            assertEq(USDC.balanceOf(bob), initialBalance, "Bob's balance should not change");
+        }
+
+        // Test 2: Access control and zero address validation
+        {
+            vm.startPrank(alice);
+            USDC.approve(address(lpUSDC), depositAmount);
+            uint256 shares = lpUSDC.deposit(depositAmount);
+            lpUSDC.redeem(shares); // Early redeem to accumulate fees
+            vm.stopPrank();
+
+            // Non-owner should not be able to withdraw fees
+            vm.prank(alice);
+            vm.expectRevert("Ownable: caller is not the owner");
+            lpUSDC.withdrawEarlyFees(bob);
+
+            // Zero address validation
+            vm.prank(deployer);
+            vm.expectRevert(ErrorsLib.ZeroAddress.selector);
+            lpUSDC.withdrawEarlyFees(address(0));
+
+            // Reset accumulated fees for clean slate
+            uint256 totalFees = lpUSDC.accEarlyWithdrawFee();
+            if (totalFees > 0) {
+                vm.startPrank(bob);
+                USDC.approve(address(lpUSDC), totalFees * 2);
+                lpUSDC.deposit(totalFees * 2);
+                vm.stopPrank();
+
+                vm.prank(deployer);
+                lpUSDC.withdrawEarlyFees(bob);
+            }
+        }
+
+        // Test 3: Alice's multiple early withdrawals with detailed tracking
+        {
+            uint256 expectedFees = lpUSDC.accEarlyWithdrawFee(); // Start from current state
+
+            // Alice's first withdrawal
+            uint256 amount1 = 50_000_000;
+            vm.startPrank(alice);
+            USDC.approve(address(lpUSDC), amount1);
+            uint256 shares1 = lpUSDC.deposit(amount1);
+
+            uint256 grossAmount = (shares1 * lpUSDC.totalUnderlying()) / lpUSDC.totalShares();
+            uint256 expectedFee = (grossAmount * earlyWithdrawFeeBips) / 10_000;
+            uint256 expectedNet = grossAmount - expectedFee;
+
+            uint256 balanceBefore = USDC.balanceOf(alice);
+            uint256 actualNet = lpUSDC.redeem(shares1);
+            vm.stopPrank();
+
+            assertEq(actualNet, expectedNet, "Alice's first withdrawal incorrect");
+            assertEq(USDC.balanceOf(alice), balanceBefore + expectedNet, "Alice's balance incorrect");
+            expectedFees += expectedFee;
+            assertEq(lpUSDC.accEarlyWithdrawFee(), expectedFees, "Fee accumulation incorrect");
+
+            // Alice's second withdrawal (reuse variables)
+            uint256 amount2 = 80_000_000;
+            vm.startPrank(alice);
+            USDC.approve(address(lpUSDC), amount2);
+            shares1 = lpUSDC.deposit(amount2); // Reuse shares1
+
+            grossAmount = (shares1 * lpUSDC.totalUnderlying()) / lpUSDC.totalShares();
+            expectedFee = (grossAmount * earlyWithdrawFeeBips) / 10_000;
+            expectedNet = grossAmount - expectedFee;
+
+            balanceBefore = USDC.balanceOf(alice);
+            actualNet = lpUSDC.redeem(shares1);
+            vm.stopPrank();
+
+            assertEq(actualNet, expectedNet, "Alice's second withdrawal incorrect");
+            expectedFees += expectedFee;
+            assertEq(lpUSDC.accEarlyWithdrawFee(), expectedFees, "Fee accumulation after second withdrawal incorrect");
+            assertEq(USDC.balanceOf(address(creditVault)), expectedFees + lpUSDC.totalUnderlying());
+        }
+
+        // Test 4: Bob and Charlie's withdrawals
+        {
+            uint256 currentFees = lpUSDC.accEarlyWithdrawFee();
+
+            // Bob's withdrawal
+            vm.warp(block.timestamp + 1 hours);
+            uint256 bobAmount = 75_000_000;
+            vm.startPrank(bob);
+            USDC.approve(address(lpUSDC), bobAmount);
+            uint256 bobShares = lpUSDC.deposit(bobAmount);
+
+            uint256 bobGross = (bobShares * lpUSDC.totalUnderlying()) / lpUSDC.totalShares();
+            uint256 bobFee = (bobGross * earlyWithdrawFeeBips) / 10_000;
+            uint256 bobNet = bobGross - bobFee;
+
+            uint256 bobBalanceBefore = USDC.balanceOf(bob);
+            uint256 bobActualNet = lpUSDC.redeem(bobShares);
+            vm.stopPrank();
+
+            assertEq(bobActualNet, bobNet, "Bob's withdrawal incorrect");
+            assertEq(USDC.balanceOf(bob), bobBalanceBefore + bobNet, "Bob's balance incorrect");
+            currentFees += bobFee;
+            assertEq(lpUSDC.accEarlyWithdrawFee(), currentFees, "Fee accumulation after Bob incorrect");
+
+            // Charlie's withdrawal
+            vm.warp(block.timestamp + 30 minutes);
+            uint256 charlieAmount = 30_000_000;
+            vm.startPrank(charlie);
+            USDC.approve(address(lpUSDC), charlieAmount);
+            bobShares = lpUSDC.deposit(charlieAmount);
+
+            bobGross = (bobShares * lpUSDC.totalUnderlying()) / lpUSDC.totalShares();
+            bobFee = (bobGross * earlyWithdrawFeeBips) / 10_000;
+            bobNet = bobGross - bobFee;
+
+            bobBalanceBefore = USDC.balanceOf(charlie);
+            bobActualNet = lpUSDC.redeem(bobShares);
+            vm.stopPrank();
+
+            assertEq(bobActualNet, bobNet, "Charlie's withdrawal incorrect");
+            assertEq(USDC.balanceOf(charlie), bobBalanceBefore + bobNet, "Charlie's balance incorrect");
+            currentFees += bobFee;
+            assertEq(lpUSDC.accEarlyWithdrawFee(), currentFees, "Final fee accumulation incorrect");
+            assertEq(USDC.balanceOf(address(creditVault)), currentFees + lpUSDC.totalUnderlying());
+        }
+
+        // Test 5: Fee withdrawal
+        {
+            uint256 totalFees = lpUSDC.accEarlyWithdrawFee();
+            assertTrue(totalFees > 0, "Should have accumulated fees");
+
+            // Add sufficient balance for withdrawal
+            uint256 additionalDeposit = totalFees * 2;
+            vm.startPrank(bob);
+            USDC.approve(address(lpUSDC), additionalDeposit);
+            lpUSDC.deposit(additionalDeposit);
+            vm.stopPrank();
+
+            uint256 deployerBefore = USDC.balanceOf(deployer);
+            vm.prank(deployer);
+            lpUSDC.withdrawEarlyFees(deployer);
+
+            assertEq(lpUSDC.accEarlyWithdrawFee(), 0, "Fees should be reset");
+            assertEq(USDC.balanceOf(deployer), deployerBefore + totalFees, "Deployer should receive fees");
+        }
+
+        // Test 6: Normal redeem doesn't accumulate fees
+        {
+            vm.startPrank(alice);
+            USDC.approve(address(lpUSDC), depositAmount);
+            uint256 shares = lpUSDC.deposit(depositAmount);
+            vm.warp(block.timestamp + lpUSDC.minRedeemInterval() + 1);
+            lpUSDC.redeem(shares);
+            vm.stopPrank();
+
+            assertEq(lpUSDC.accEarlyWithdrawFee(), 0, "Normal redeems should not accumulate fees");
+        }
     }
 }

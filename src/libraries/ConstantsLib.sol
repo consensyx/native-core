@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.28;
 
+/// @dev Minimum shares permanently locked to prevent first depositor attacks
+uint256 constant MINIMUM_SHARE = 10 ** 3;
+
 /// @dev Every interval, the system performs an epoch update to calculate and settle funding fees between traders
 uint256 constant EPOCH_UPDATE_INTERVAL = 8 hours;
 
