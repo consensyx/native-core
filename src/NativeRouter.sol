@@ -260,11 +260,10 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
 
             TransferHelper.safeTransfer(WETH9, payee, effectiveSellerTokenAmount);
         } else {
-            effectiveSellerTokenAmount = _chargeWidgetFee(widgetFee, sellerTokenAmount, sellerToken, false);
-
             if (multiHop) {
                 TransferHelper.safeTransfer(sellerToken, payee, effectiveSellerTokenAmount);
             } else {
+                effectiveSellerTokenAmount = _chargeWidgetFee(widgetFee, sellerTokenAmount, sellerToken, false);
                 TransferHelper.safeTransferFrom(sellerToken, msg.sender, payee, effectiveSellerTokenAmount);
             }
         }
