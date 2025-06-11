@@ -9,10 +9,22 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract NativeLPTokenTest is BaseTest {
     uint256 constant MINIMUM_SHARE = 1000;
 
+    // Helper arrays for batch function calls
+    address[] private singleAccount;
+    bool[] private singleStatus;
+    address[] private multiAccounts;
+    bool[] private multiStatuses;
+
     function setUp() public override {
         super.setUp();
         vm.prank(deployer);
         lpUSDC.setMinRedeemInterval(8 hours);
+
+        // Initialize helper arrays
+        singleAccount = new address[](1);
+        singleStatus = new bool[](1);
+        multiAccounts = new address[](2);
+        multiStatuses = new bool[](2);
     }
 
     function test_deposit_success() public {
@@ -780,7 +792,9 @@ contract NativeLPTokenTest is BaseTest {
 
         // Add alice to whitelist
         vm.startPrank(deployer);
-        lpUSDC.setRedeemCooldownExempt(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setRedeemCooldownExempt(singleAccount, singleStatus);
         vm.stopPrank();
 
         // Verify alice is whitelisted
@@ -801,7 +815,9 @@ contract NativeLPTokenTest is BaseTest {
 
         // Remove alice from whitelist
         vm.startPrank(deployer);
-        lpUSDC.setRedeemCooldownExempt(alice, false);
+        singleAccount[0] = alice;
+        singleStatus[0] = false;
+        lpUSDC.setRedeemCooldownExempt(singleAccount, singleStatus);
         vm.stopPrank();
 
         // Verify alice is no longer whitelisted
@@ -868,7 +884,9 @@ contract NativeLPTokenTest is BaseTest {
 
         // Add alice to whitelist
         vm.prank(deployer);
-        lpUSDC.setRedeemCooldownExempt(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setRedeemCooldownExempt(singleAccount, singleStatus);
 
         vm.startPrank(alice);
         uint256 transferredAmount = lpUSDC.transferShares(bob, sharesToTransfer);
@@ -899,7 +917,9 @@ contract NativeLPTokenTest is BaseTest {
 
         // Set alice as deposit delegator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         // Record initial states
         uint256 initialTotalShares = lpUSDC.totalShares();
@@ -939,7 +959,9 @@ contract NativeLPTokenTest is BaseTest {
         // Setup - set min deposit to 100 USDC
         vm.startPrank(deployer);
         lpUSDC.setMinDeposit(100_000_000);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
         vm.stopPrank();
 
         // Try to deposit 99 USDC
@@ -954,7 +976,9 @@ contract NativeLPTokenTest is BaseTest {
         // Setup
         vm.startPrank(deployer);
         lpUSDC.pauseDeposit();
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
         vm.stopPrank();
 
         // Try to deposit while paused
@@ -968,7 +992,9 @@ contract NativeLPTokenTest is BaseTest {
     function test_depositFor_insufficientAllowance() public {
         // Setup trusted delegator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         uint256 depositAmount = 100_000_000;
 
@@ -982,7 +1008,9 @@ contract NativeLPTokenTest is BaseTest {
     function test_depositFor_insufficientBalance() public {
         // Setup trusted delegator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         // Setup - drain alice's balance
         uint256 aliceBalance = USDC.balanceOf(alice);
@@ -999,7 +1027,9 @@ contract NativeLPTokenTest is BaseTest {
     function test_depositFor_zeroAmount() public {
         // Setup trusted delegator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         vm.startPrank(alice);
         vm.expectRevert(ErrorsLib.BelowMinimumDeposit.selector);
@@ -1010,7 +1040,9 @@ contract NativeLPTokenTest is BaseTest {
     function test_depositFor_zeroAddress() public {
         // Setup trusted delegator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         vm.startPrank(alice);
         USDC.approve(address(lpUSDC), 100_000_000);
@@ -1022,8 +1054,11 @@ contract NativeLPTokenTest is BaseTest {
     function test_depositFor_multipleDeposits() public {
         // Setup trusted delegators
         vm.startPrank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
-        lpUSDC.setTrustedOperator(charlie, true);
+        multiAccounts[0] = alice;
+        multiAccounts[1] = charlie;
+        multiStatuses[0] = true;
+        multiStatuses[1] = true;
+        lpUSDC.setTrustedOperator(multiAccounts, multiStatuses);
         vm.stopPrank();
 
         // First deposit from Alice to Bob
@@ -1056,7 +1091,9 @@ contract NativeLPTokenTest is BaseTest {
     function test_redeemTo_success() public {
         // Setup - first set alice as trusted operator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         // Setup - first deposit
         uint256 depositAmount = 100_000_000; // 100 USDC
@@ -1105,7 +1142,9 @@ contract NativeLPTokenTest is BaseTest {
     function test_redeemTo_earlyWithdrawalFee() public {
         // Setup - set alice as trusted operator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         uint256 depositAmount = 100_000_000; // 100 USDC
         uint256 earlyWithdrawFeeBips = 100; // 1%
@@ -1145,7 +1184,9 @@ contract NativeLPTokenTest is BaseTest {
     function test_redeemTo_insufficientShares() public {
         // Setup - set alice as trusted operator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         // Try to redeem without any shares
         vm.startPrank(alice);
@@ -1157,7 +1198,9 @@ contract NativeLPTokenTest is BaseTest {
     function test_redeemTo_zeroAmount() public {
         // Setup - set alice as trusted operator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         vm.startPrank(alice);
         vm.expectRevert(ErrorsLib.ZeroAmount.selector);
@@ -1168,7 +1211,9 @@ contract NativeLPTokenTest is BaseTest {
     function test_redeemTo_zeroAddress() public {
         // Setup - set alice as trusted operator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         // Setup - first deposit
         uint256 depositAmount = 100_000_000;
@@ -1185,7 +1230,9 @@ contract NativeLPTokenTest is BaseTest {
     function test_redeemTo_whenPaused() public {
         // Setup - set alice as trusted operator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         // Setup - first deposit
         uint256 depositAmount = 100_000_000;
@@ -1208,7 +1255,9 @@ contract NativeLPTokenTest is BaseTest {
     function test_redeemTo_partialAmount() public {
         // Setup - set alice as trusted operator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         // Setup - first deposit
         uint256 depositAmount = 100_000_000;
@@ -1242,7 +1291,9 @@ contract NativeLPTokenTest is BaseTest {
     function test_redeemTo_afterYieldDistribution() public {
         // Setup - set alice as trusted operator
         vm.prank(deployer);
-        lpUSDC.setTrustedOperator(alice, true);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
 
         // Setup - first deposit
         uint256 depositAmount = 100_000_000;
@@ -1453,5 +1504,124 @@ contract NativeLPTokenTest is BaseTest {
 
             assertEq(lpUSDC.accEarlyWithdrawFee(), 0, "Normal redeems should not accumulate fees");
         }
+    }
+
+    function test_setTrustedOperator() public {
+        uint256 depositAmount = 100_000_000; // 100 USDC
+
+        // Test 1: Initially alice should not be a trusted operator
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        vm.expectRevert(ErrorsLib.NotTrustedOperator.selector);
+        lpUSDC.depositFor(bob, depositAmount);
+        vm.stopPrank();
+
+        // Test 2: Set alice as trusted operator (single address)
+        vm.prank(deployer);
+        singleAccount[0] = alice;
+        singleStatus[0] = true;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
+
+        // Verify alice is now a trusted operator
+        assertTrue(lpUSDC.trustedOperators(alice), "Alice should be a trusted operator");
+
+        // Test 3: Alice should now be able to perform trusted operations
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        uint256 shares = lpUSDC.depositFor(bob, depositAmount);
+        assertTrue(shares > 0, "DepositFor should succeed for trusted operator");
+        assertEq(lpUSDC.shares(bob), shares, "Bob should receive shares");
+
+        // Alice also needs to deposit for herself to have shares for redeemTo test
+        USDC.approve(address(lpUSDC), depositAmount);
+        uint256 aliceShares = lpUSDC.deposit(depositAmount);
+
+        // Wait for redeem interval and test redeemTo
+        vm.warp(block.timestamp + lpUSDC.minRedeemInterval() + 1);
+        uint256 charlieBalanceBefore = USDC.balanceOf(charlie);
+        uint256 redeemAmount = lpUSDC.redeemTo(aliceShares, charlie);
+        assertTrue(redeemAmount > 0, "RedeemTo should succeed for trusted operator");
+        assertEq(
+            USDC.balanceOf(charlie), charlieBalanceBefore + redeemAmount, "Charlie should receive the redeemed USDC"
+        );
+        vm.stopPrank();
+
+        // Test 4: Remove alice's trusted operator status
+        vm.prank(deployer);
+        singleAccount[0] = alice;
+        singleStatus[0] = false;
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
+
+        // Verify alice is no longer a trusted operator
+        assertFalse(lpUSDC.trustedOperators(alice), "Alice should not be a trusted operator");
+
+        // Test 5: Alice should no longer be able to perform trusted operations
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        vm.expectRevert(ErrorsLib.NotTrustedOperator.selector);
+        lpUSDC.depositFor(bob, depositAmount);
+        vm.stopPrank();
+
+        // Test 6: Batch operation - set multiple trusted operators
+        vm.prank(deployer);
+        multiAccounts[0] = alice;
+        multiAccounts[1] = charlie;
+        multiStatuses[0] = true;
+        multiStatuses[1] = true;
+        lpUSDC.setTrustedOperator(multiAccounts, multiStatuses);
+
+        // Verify both are trusted operators
+        assertTrue(lpUSDC.trustedOperators(alice), "Alice should be trusted after batch operation");
+        assertTrue(lpUSDC.trustedOperators(charlie), "Charlie should be trusted after batch operation");
+
+        // Test 7: Both should be able to perform trusted operations
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        shares = lpUSDC.depositFor(bob, depositAmount);
+        assertTrue(shares > 0, "Alice should be able to depositFor");
+        vm.stopPrank();
+
+        vm.startPrank(charlie);
+        USDC.approve(address(lpUSDC), depositAmount);
+        shares = lpUSDC.depositFor(bob, depositAmount);
+        assertTrue(shares > 0, "Charlie should be able to depositFor");
+        vm.stopPrank();
+
+        // Test 8: Batch operation - mixed statuses (one true, one false)
+        vm.prank(deployer);
+        multiAccounts[0] = alice;
+        multiAccounts[1] = charlie;
+        multiStatuses[0] = false; // Remove alice
+        multiStatuses[1] = true; // Keep charlie
+        lpUSDC.setTrustedOperator(multiAccounts, multiStatuses);
+
+        // Verify statuses
+        assertFalse(lpUSDC.trustedOperators(alice), "Alice should not be trusted");
+        assertTrue(lpUSDC.trustedOperators(charlie), "Charlie should still be trusted");
+
+        // Test 9: Only charlie should be able to perform trusted operations
+        vm.startPrank(alice);
+        USDC.approve(address(lpUSDC), depositAmount);
+        vm.expectRevert(ErrorsLib.NotTrustedOperator.selector);
+        lpUSDC.depositFor(bob, depositAmount);
+        vm.stopPrank();
+
+        vm.startPrank(charlie);
+        USDC.approve(address(lpUSDC), depositAmount);
+        shares = lpUSDC.depositFor(bob, depositAmount);
+        assertTrue(shares > 0, "Charlie should still be able to depositFor");
+        vm.stopPrank();
+
+        // Test 10: Only owner can set trusted operators
+        vm.prank(alice);
+        vm.expectRevert("Ownable: caller is not the owner");
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
+
+        // Test 11: Cannot set zero address as trusted operator
+        vm.prank(deployer);
+        singleAccount[0] = address(0);
+        singleStatus[0] = true;
+        vm.expectRevert(ErrorsLib.ZeroAddress.selector);
+        lpUSDC.setTrustedOperator(singleAccount, singleStatus);
     }
 }

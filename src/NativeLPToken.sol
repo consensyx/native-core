@@ -292,25 +292,29 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
         emit EarlyWithdrawFeeBipsUpdated(oldFeeBips, _earlyWithdrawFeeBips);
     }
 
-    /// @notice Sets the trusted operator status for an address
-    /// @param account The address to update
-    /// @param status The new operator status
-    function setTrustedOperator(address account, bool status) external onlyOwner {
-        require(account != address(0), ErrorsLib.ZeroAddress());
+    /// @notice Sets the trusted operator status for multiple addresses
+    /// @param accounts The addresses to update
+    /// @param statuses The new operator statuses corresponding to each account
+    function setTrustedOperator(address[] calldata accounts, bool[] calldata statuses) external onlyOwner {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            require(accounts[i] != address(0), ErrorsLib.ZeroAddress());
 
-        trustedOperators[account] = status;
-        emit TrustedOperatorUpdated(account, status);
+            trustedOperators[accounts[i]] = statuses[i];
+            emit TrustedOperatorUpdated(accounts[i], statuses[i]);
+        }
     }
 
-    /// @notice Sets the redeem cooldown exemption status for an address
-    /// @param account The address to update
-    /// @param status The new exemption status
+    /// @notice Sets the redeem cooldown exemption status for multiple addresses
+    /// @param accounts The addresses to update
+    /// @param statuses The new exemption statuses corresponding to each account
     /// @dev Can only be called by the owner
-    function setRedeemCooldownExempt(address account, bool status) external onlyOwner {
-        require(account != address(0), ErrorsLib.ZeroAddress());
+    function setRedeemCooldownExempt(address[] calldata accounts, bool[] calldata statuses) external onlyOwner {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            require(accounts[i] != address(0), ErrorsLib.ZeroAddress());
 
-        redeemCooldownExempt[account] = status;
-        emit RedeemCooldownExemptUpdated(account, status);
+            redeemCooldownExempt[accounts[i]] = statuses[i];
+            emit RedeemCooldownExemptUpdated(accounts[i], statuses[i]);
+        }
     }
 
     /// @notice Withdraws accumulated early withdrawal fees
