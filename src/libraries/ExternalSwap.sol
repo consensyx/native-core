@@ -93,7 +93,7 @@ library ExternalSwap {
 
         require(sellerTokenAmount > 0 && buyerTokenAmount > 0 && flexibleAmount > 0, ErrorsLib.ZeroAmount());
 
-        if (flexibleAmount < sellerTokenAmount) {
+        if (flexibleAmount != sellerTokenAmount) {
             buyerTokenAmount = FullMath.mulDiv(flexibleAmount, buyerTokenAmount, sellerTokenAmount);
             sellerTokenAmount = flexibleAmount;
         }
