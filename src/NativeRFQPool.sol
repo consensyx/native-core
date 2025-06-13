@@ -44,9 +44,6 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     /// @notice Mapping of authorized market makers who can sign RFQ quotes
     mapping(address => bool) public rfqSigners;
 
-    /// @notice Mapping of whitelisted market makers who can trade without signatures
-    mapping(address => bool) public isWhitelisedSigners;
-
     /*//////////////////////////////////////////////////////////////////////////
                                      RECEIVE FUNCTION
     //////////////////////////////////////////////////////////////////////////*/
@@ -84,7 +81,9 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
 
     /// @notice See NativeRouter.tradeRFQT for detailed documentation
     /// @dev Called by NativeRouter to execute RFQ trades in the pool
-    function tradeRFQT(uint256 effectiveSellerTokenAmount, RFQTQuote memory quote) external override onlyRouter {
+    function tradeRFQT(uint256 effectiveSellerTokenAmount, RFQTQuote memory quote) external override {
+        require(msg.sender == router, ErrorsLib.OnlyNativeRouter());
+
         // Prevent replay attacks
         require(!nonces[quote.nonce], ErrorsLib.NonceUsed());
 
@@ -101,15 +100,36 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         // Verify market maker signature
         _verifyPMMSignature(quote);
 
-        uint256 buyerTokenAmount = _transferAndCallback(
+        uint256 buyerTokenAmount = effectiveSellerTokenAmount != quote.sellerTokenAmount
+            ? (effectiveSellerTokenAmount * quote.buyerTokenAmount) / quote.sellerTokenAmount
+            : quote.buyerTokenAmount;
+
+        // Only calculate time decay slippage if decayExponent > 0
+        if (quote.decayExponent > 0) {
+            // Calculate time ratio with 1e6 precision: preserves accuracy while preventing overflow risk with exponentiation
+            uint256 timeRatio =
+                ((block.timestamp - quote.decayStartTime) * 1e6) / (quote.deadlineTimestamp - quote.decayStartTime);
+
+            // Apply exponential decay curve: timeRatio^decayExponent
+            uint256 ratioPowered = timeRatio ** quote.decayExponent;
+            uint256 scalePowered = 1e6 ** quote.decayExponent;
+
+            // Calculate final slippage in basis points
+            uint256 slippageBps =
+                (ratioPowered * quote.maxSlippageBps * BPS_DENOMINATOR) / (scalePowered * BPS_DENOMINATOR);
+
+            // Apply time decay slippage to reduce buyer token amount
+            buyerTokenAmount = buyerTokenAmount * (BPS_DENOMINATOR - slippageBps) / BPS_DENOMINATOR;
+        }
+
+        _transferAndCallback(
             quote.signer,
             quote.recipient,
             quote.buyerToken,
             originalBuyerToken,
             quote.sellerToken,
-            quote.buyerTokenAmount,
-            quote.sellerTokenAmount,
-            effectiveSellerTokenAmount
+            effectiveSellerTokenAmount,
+            buyerTokenAmount
         );
 
         emit RFQTrade(
@@ -146,17 +166,6 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         emit SignerUpdated(signer, isSigner);
     }
 
-    /// @notice Sets the whitelisted status for a market maker to bypass signature verification
-    /// @param account The address of the market maker
-    /// @param status The new whitelisted status
-    /// @dev Can only be called by the owner
-    function setWhitelistedSigner(address account, bool status) external onlyOwner {
-        require(account != address(0), ErrorsLib.ZeroAddress());
-
-        isWhitelisedSigners[account] = status;
-        emit WhitelistedSignerUpdated(account, status);
-    }
-
     /*//////////////////////////////////////////////////////////////////////////
                                 INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
@@ -167,27 +176,16 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
         address buyerToken,
         address originalBuyerToken,
         address sellerToken,
-        uint256 buyerTokenAmount,
-        uint256 sellerTokenAmount,
-        uint256 effectiveSellerTokenAmount
-    ) internal returns (uint256 _buyerTokenAmount) {
-        _buyerTokenAmount = effectiveSellerTokenAmount != sellerTokenAmount
-            ? (effectiveSellerTokenAmount * buyerTokenAmount) / sellerTokenAmount
-            : buyerTokenAmount;
-
+        uint256 effectiveSellerTokenAmount,
+        uint256 buyerTokenAmount
+    ) internal {
         if (isCreditPool) {
-            require(
-                effectiveSellerTokenAmount <= (type(int256).max).toUint256()
-                    && _buyerTokenAmount <= (type(int256).max).toUint256(),
-                ErrorsLib.Overflow()
-            );
-
             ICreditVault(treasury).swapCallback(
-                signer, sellerToken, effectiveSellerTokenAmount.toInt256(), buyerToken, _buyerTokenAmount.toInt256()
+                signer, sellerToken, effectiveSellerTokenAmount.toInt256(), buyerToken, buyerTokenAmount.toInt256()
             );
         }
 
-        _transferFromTreasury(originalBuyerToken, recipient, _buyerTokenAmount);
+        _transferFromTreasury(originalBuyerToken, recipient, buyerTokenAmount);
     }
 
     /// @dev Helper function to transfer buyerToken from external account.
@@ -206,10 +204,6 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
     }
 
     function _verifyPMMSignature(RFQTQuote memory quote) internal view {
-        if (isWhitelisedSigners[quote.signer]) {
-            return;
-        }
-
         require(rfqSigners[quote.signer], ErrorsLib.InvalidSigner());
 
         bytes32 digest = _hashTypedDataV4(
@@ -218,24 +212,19 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
                     ORDER_SIGNATURE_HASH,
                     quote.nonce,
                     quote.signer,
-                    address(this),
-                    quote.recipient,
                     quote.buyerToken,
                     quote.sellerToken,
                     quote.buyerTokenAmount,
                     quote.sellerTokenAmount,
                     quote.deadlineTimestamp,
-                    quote.recipient,
+                    quote.decayStartTime,
+                    quote.decayExponent,
+                    quote.maxSlippageBps,
                     quote.quoteId
                 )
             )
         );
 
         require(quote.signer == ECDSA.recover(digest, quote.signature), ErrorsLib.InvalidSignature());
-    }
-
-    modifier onlyRouter() {
-        require(msg.sender == router, ErrorsLib.OnlyNativeRouter());
-        _;
     }
 }

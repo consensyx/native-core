@@ -6,22 +6,22 @@ import "../../src/interfaces/ICreditVault.sol";
 
 library SignatureUtils {
     function generateQuoteSignature(IQuote.RFQTQuote memory quote) internal view returns (bytes32) {
-        // keccak256("Order(uint256 id,address signer,address buyer,address seller,address buyerToken,address sellerToken,uint256 buyerTokenAmount,uint256 sellerTokenAmount,uint256 deadlineTimestamp,address caller,bytes16 quoteId)");
-        bytes32 ORDER_SIGNATURE_HASH = 0xcdd3cf1659a8da07564b163a4df90f66944547e93f0bb61ba676c459a2db4e20;
+        // keccak256("Order(uint256 id,address signer,address buyerToken,address sellerToken,uint256 buyerTokenAmount,uint256 sellerTokenAmount,uint256 deadlineTimestamp,uint256 decayStartTime,uint256 decayExponent,uint256 maxSlippageBps,bytes16 quoteId");
+        bytes32 ORDER_SIGNATURE_HASH = 0x97efc9a59386fcccf3827884fe9d2769078f17846bf6e9f96417bbde40aaed3d;
 
         bytes32 quoteStructHash = keccak256(
             abi.encode(
                 ORDER_SIGNATURE_HASH,
                 quote.nonce,
                 quote.signer,
-                quote.pool,
-                quote.recipient,
                 quote.buyerToken,
                 quote.sellerToken,
                 quote.buyerTokenAmount,
                 quote.sellerTokenAmount,
                 quote.deadlineTimestamp,
-                quote.recipient,
+                quote.decayStartTime,
+                quote.decayExponent,
+                quote.maxSlippageBps,
                 quote.quoteId
             )
         );
@@ -37,39 +37,35 @@ library SignatureUtils {
         bytes32 RFQ_QUOTE_WIDGET_SIGNATURE_HASH =
             keccak256("RFQTQuote(bytes32 quote,address widgetFeeRecipient,uint256 widgetFeeRate)");
 
-        bytes32 quoteHash = _generateQuoteHash(quote, sender);
-        bytes32 widgetFeeStructHash =
-            _generateWidgetFeeStructHash(RFQ_QUOTE_WIDGET_SIGNATURE_HASH, quoteHash, quote.widgetFee);
+        bytes32 quoteHash = _generateQuoteHash(quote);
+        bytes32 widgetFeeStructHash = keccak256(
+            abi.encode(
+                RFQ_QUOTE_WIDGET_SIGNATURE_HASH, quoteHash, quote.widgetFee.feeRecipient, quote.widgetFee.feeRate
+            )
+        );
 
         return _hashTypedDataV4(widgetFeeStructHash, routerAddress, "Native Router", "1");
     }
 
-    function _generateQuoteHash(IQuote.RFQTQuote memory quote, address sender) internal pure returns (bytes32) {
+    function _generateQuoteHash(IQuote.RFQTQuote memory quote) internal pure returns (bytes32) {
+        // This matches the exact logic in NativeRouter._verifyRFQSignature
         return keccak256(
             abi.encode(
                 quote.pool,
-                quote.signer,
                 quote.recipient,
                 quote.sellerToken,
                 quote.buyerToken,
                 quote.sellerTokenAmount,
                 quote.buyerTokenAmount,
                 quote.deadlineTimestamp,
-                quote.nonce,
+                quote.decayStartTime,
+                quote.decayExponent,
+                quote.maxSlippageBps,
                 quote.multiHop,
                 quote.signature,
-                quote.externalSwapCalldata,
-                sender
+                quote.externalSwapCalldata
             )
         );
-    }
-
-    function _generateWidgetFeeStructHash(
-        bytes32 SIGNATURE_HASH,
-        bytes32 quoteHash,
-        IQuote.WidgetFee memory widgetFee
-    ) internal pure returns (bytes32) {
-        return keccak256(abi.encode(SIGNATURE_HASH, quoteHash, widgetFee.feeRecipient, widgetFee.feeRate));
     }
 
     function _hashTypedDataV4(

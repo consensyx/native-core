@@ -13,6 +13,12 @@ uint256 constant MAX_EARLY_WITHDRAW_FEE_BIPS = 1000;
 /// @dev Maximum widget fee in basis points (20%)
 uint256 constant MAX_WIDGET_FEE_BIPS = 2000;
 
+/// @dev Maximum decay exponentAdd commentMore actions
+uint256 constant MAX_DECAY_EXPONENT = 3;
+
+/// @dev Basis points denominator
+uint256 constant BPS_DENOMINATOR = 10_000;
+
 /// @dev The EIP-712 typeHash for Settle Market Maker Position Authorization.
 bytes32 constant SETTLEMENT_REQUEST_SIGNATURE_HASH = keccak256(
     "SettlementRequest(uint256 nonce,uint256 deadline,address trader,bytes32 positionUpdates,address recipient)"
@@ -29,7 +35,7 @@ bytes32 constant LIQUIDATION_REQUEST_SIGNATURE_HASH = keccak256(
 
 /// @dev The EIP-712 typeHash for Market Maker RFQ Quote Authorization.
 bytes32 constant ORDER_SIGNATURE_HASH = keccak256(
-    "Order(uint256 id,address signer,address buyer,address seller,address buyerToken,address sellerToken,uint256 buyerTokenAmount,uint256 sellerTokenAmount,uint256 deadlineTimestamp,address caller,bytes16 quoteId)"
+    "Order(uint256 id,address signer,address buyerToken,address sellerToken,uint256 buyerTokenAmount,uint256 sellerTokenAmount,uint256 deadlineTimestamp,uint256 decayStartTime,uint256 decayExponent,uint256 maxSlippageBps,bytes16 quoteId)"
 );
 
 /// @dev The EIP-712 typeHash for RFQ Quote Widget Authorization.

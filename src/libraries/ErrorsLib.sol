@@ -50,6 +50,9 @@ library ErrorsLib {
     /// @notice Thrown when an amount parameter is invalid
     error InvalidAmount();
 
+    /// @notice Thrown when decay exponent is invalid
+    error InvalidDecayExponent();
+
     /// @notice Thrown when fee rate in basis points exceeds maximum (10000)
     error InvalidFeeBips();
 

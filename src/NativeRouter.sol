@@ -81,6 +81,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
     ) external payable override nonReentrant whenNotPaused {
         require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
         require(block.timestamp <= quote.deadlineTimestamp, ErrorsLib.QuoteExpired());
+        require(quote.decayExponent <= MAX_DECAY_EXPONENT, ErrorsLib.InvalidDecayExponent());
 
         _verifyRFQSignature(quote);
 
@@ -146,7 +147,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
     /// @dev SECURITY CONSIDERATION: This function is permissionless and will unwrap ALL WETH in the contract
     /// @dev Must be called immediately after receiving WETH in the same multicall transaction
     /// @dev Typical usage flow:
-    ///      1. Call tradeRFQ/fillOrder to receive WETH (in multicall)
+    ///      1. Call tradeRFQ to receive WETH (in multicall)
     ///      2. Call this function immediately in the same multicall to unwrap received WETH
     ///      3. Never leave WETH in this contract between transactions
     /// @param recipient The address that will receive the unwrapped ETH
@@ -296,18 +297,18 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
         bytes32 quoteHash = keccak256(
             abi.encode(
                 quote.pool,
-                quote.signer,
                 quote.recipient,
                 quote.sellerToken,
                 quote.buyerToken,
                 quote.sellerTokenAmount,
                 quote.buyerTokenAmount,
                 quote.deadlineTimestamp,
-                quote.nonce,
+                quote.decayStartTime,
+                quote.decayExponent,
+                quote.maxSlippageBps,
                 quote.multiHop,
                 quote.signature,
-                quote.externalSwapCalldata,
-                msg.sender
+                quote.externalSwapCalldata
             )
         );
 

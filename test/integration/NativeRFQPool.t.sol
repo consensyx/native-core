@@ -18,46 +18,75 @@ contract NativeRFQPoolTest is BaseTest {
     mapping(address => mapping(address => uint256)) private initialBalances;
     mapping(address => mapping(address => int256)) private initialPositions;
 
+    // Struct to reduce stack depth in _createQuote function
+    struct QuoteParams {
+        address poolAddress;
+        uint256 sellAmount;
+        uint256 expectedAmount;
+        address recipient;
+        address sellerToken;
+        address buyerToken;
+    }
+
+    // Struct to hold signature data
+    struct SignatureData {
+        bytes32 quoteDigest;
+        bytes32 widgetFeeDigest;
+        address routerAddress;
+        uint8 v;
+        bytes32 r;
+        bytes32 s;
+    }
+
     function setUp() public override {
         super.setUp();
 
-        // Create router2 and rfqPool2
-        vm.startPrank(deployer);
+        // Block 1: Create router2 and rfqPool2
+        {
+            vm.startPrank(deployer);
 
-        router2 = new NativeRouter(address(creditVault), address(weth), deployer);
+            router2 = new NativeRouter(address(creditVault), address(weth), deployer);
 
-        rfqPool2 = new NativeRFQPool(true, address(weth), address(router2), address(creditVault), "RFQPool2");
+            rfqPool2 = new NativeRFQPool(true, address(weth), address(router2), address(creditVault), "RFQPool2");
 
-        rfqPool2.setSigner(deployer, true);
+            rfqPool2.setSigner(deployer, true);
 
-        router2.setNativePool(address(rfqPool2), true);
+            router2.setNativePool(address(rfqPool2), true);
 
-        creditVault.setCreditPool(address(rfqPool2), true);
+            creditVault.setCreditPool(address(rfqPool2), true);
 
-        // Ensure CreditVault has enough WETH
-        deal(address(weth), address(creditVault), 100 ether);
+            // Ensure CreditVault has enough WETH
+            deal(address(weth), address(creditVault), 100 ether);
+            vm.stopPrank();
+        }
 
-        // Important: CreditVault needs to approve rfqPool2 to spend its WETH
-        vm.startPrank(deployer);
-        ICreditVault.TokenAmountUint[] memory tokens = new ICreditVault.TokenAmountUint[](2);
-        tokens[0] = ICreditVault.TokenAmountUint({token: address(USDC), amount: type(uint256).max});
-        tokens[1] = ICreditVault.TokenAmountUint({token: address(weth), amount: type(uint256).max});
-        creditVault.setAllowance(tokens, address(rfqPool2));
-        vm.stopPrank();
+        // Block 2: Set up CreditVault allowances
+        {
+            vm.startPrank(deployer);
+            ICreditVault.TokenAmountUint[] memory tokens = new ICreditVault.TokenAmountUint[](2);
+            tokens[0] = ICreditVault.TokenAmountUint({token: address(USDC), amount: type(uint256).max});
+            tokens[1] = ICreditVault.TokenAmountUint({token: address(weth), amount: type(uint256).max});
+            creditVault.setAllowance(tokens, address(rfqPool2));
+            vm.stopPrank();
+        }
 
-        // Set up initial token balances and approvals for Bob
-        deal(address(weth), bob, 100 ether);
-        vm.startPrank(bob);
-        weth.approve(address(router2), type(uint256).max);
-        vm.stopPrank();
+        // Block 3: Set up Bob's balances and approvals
+        {
+            deal(address(weth), bob, 100 ether);
+            vm.startPrank(bob);
+            weth.approve(address(router2), type(uint256).max);
+            vm.stopPrank();
+        }
 
-        // Give Alice USDC for LP deposit and trading
-        deal(address(USDC), alice, 13_000 * 10 ** 6); // Give Alice 13,000 USDC (10,000 for LP + 3,000 for trading)
-        vm.startPrank(alice);
-        USDC.approve(address(lpUSDC), type(uint256).max);
-        lpUSDC.deposit(10_000 * 10 ** 6); // Alice deposits 10,000 USDC
-        USDC.approve(address(router2), type(uint256).max);
-        vm.stopPrank();
+        // Block 4: Set up Alice's balances and approvals
+        {
+            deal(address(USDC), alice, 13_000 * 10 ** 6); // Give Alice 13,000 USDC (10,000 for LP + 3,000 for trading)
+            vm.startPrank(alice);
+            USDC.approve(address(lpUSDC), type(uint256).max);
+            lpUSDC.deposit(10_000 * 10 ** 6); // Alice deposits 10,000 USDC
+            USDC.approve(address(router2), type(uint256).max);
+            vm.stopPrank();
+        }
     }
 
     function test_multipleRoutersAndPools() public {
@@ -181,35 +210,72 @@ contract NativeRFQPoolTest is BaseTest {
         address sellerToken,
         address buyerToken
     ) internal view returns (IQuote.RFQTQuote memory) {
-        IQuote.RFQTQuote memory quote = IQuote.RFQTQuote({
-            pool: poolAddress,
-            signer: halo,
+        QuoteParams memory params = QuoteParams({
+            poolAddress: poolAddress,
+            sellAmount: sellAmount,
+            expectedAmount: expectedUsdcAmount,
             recipient: recipient,
             sellerToken: sellerToken,
-            buyerToken: buyerToken,
-            sellerTokenAmount: sellAmount,
-            buyerTokenAmount: expectedUsdcAmount,
-            amountOutMinimum: expectedUsdcAmount,
-            deadlineTimestamp: block.timestamp + 1 hours,
-            nonce: 0,
-            multiHop: false,
-            signature: bytes(""),
-            externalSwapCalldata: bytes(""),
-            quoteId: bytes16(0),
-            widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: 0}),
-            widgetFeeSignature: bytes("")
+            buyerToken: buyerToken
         });
 
-        // Generate quote signature
-        bytes32 quoteDigest = SignatureUtils.generateQuoteSignature(quote);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(haloKey, quoteDigest);
-        quote.signature = abi.encodePacked(r, s, v);
+        return _buildQuoteWithParams(params);
+    }
 
-        // Generate widget fee signature using the correct router
-        address routerAddress = poolAddress == address(rfqPool) ? address(router) : address(router2);
-        bytes32 widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, recipient, routerAddress);
-        (v, r, s) = vm.sign(deployerKey, widgetFeeDigest);
-        quote.widgetFeeSignature = abi.encodePacked(r, s, v);
+    function _buildQuoteWithParams(QuoteParams memory params) internal view returns (IQuote.RFQTQuote memory) {
+        IQuote.RFQTQuote memory quote;
+
+        // Block 1: Create quote structure
+        {
+            quote = IQuote.RFQTQuote({
+                pool: params.poolAddress,
+                signer: halo,
+                recipient: params.recipient,
+                sellerToken: params.sellerToken,
+                buyerToken: params.buyerToken,
+                sellerTokenAmount: params.sellAmount,
+                buyerTokenAmount: params.expectedAmount,
+                amountOutMinimum: params.expectedAmount,
+                deadlineTimestamp: block.timestamp + 1 hours,
+                // decay mechanism
+                decayStartTime: block.timestamp,
+                decayExponent: 0,
+                maxSlippageBps: 0,
+                // end decay mechanism
+                nonce: 0,
+                multiHop: false,
+                signature: bytes(""),
+                externalSwapCalldata: bytes(""),
+                quoteId: bytes16(0),
+                widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: 0}),
+                widgetFeeSignature: bytes("")
+            });
+        }
+
+        return _signQuote(quote, params);
+    }
+
+    function _signQuote(
+        IQuote.RFQTQuote memory quote,
+        QuoteParams memory params
+    ) internal view returns (IQuote.RFQTQuote memory) {
+        SignatureData memory sigData;
+
+        // Block 1: Generate quote signature
+        {
+            sigData.quoteDigest = SignatureUtils.generateQuoteSignature(quote);
+            (sigData.v, sigData.r, sigData.s) = vm.sign(haloKey, sigData.quoteDigest);
+            quote.signature = abi.encodePacked(sigData.r, sigData.s, sigData.v);
+        }
+
+        // Block 2: Generate widget fee signature
+        {
+            sigData.routerAddress = params.poolAddress == address(rfqPool) ? address(router) : address(router2);
+            sigData.widgetFeeDigest =
+                SignatureUtils.generateWidgetFeeSignature(quote, params.recipient, sigData.routerAddress);
+            (sigData.v, sigData.r, sigData.s) = vm.sign(deployerKey, sigData.widgetFeeDigest);
+            quote.widgetFeeSignature = abi.encodePacked(sigData.r, sigData.s, sigData.v);
+        }
 
         return quote;
     }
