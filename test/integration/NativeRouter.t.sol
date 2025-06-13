@@ -160,7 +160,7 @@ contract NativeRouterTest is BaseTest {
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(haloKey, quoteDigest);
             quote.signature = abi.encodePacked(r, s, v);
 
-            bytes32 widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, alice, address(router));
+            bytes32 widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, address(router));
             (v, r, s) = vm.sign(deployerKey, widgetFeeDigest);
             quote.widgetFeeSignature = abi.encodePacked(r, s, v);
         }
@@ -405,7 +405,7 @@ contract NativeRouterTest is BaseTest {
 
         // Block 3: Generate widget fee signature
         {
-            bytes32 widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, alice, address(router));
+            bytes32 widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, address(router));
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, widgetFeeDigest);
             quote.widgetFeeSignature = abi.encodePacked(r, s, v);
         }
@@ -508,7 +508,7 @@ contract NativeRouterTest is BaseTest {
 
         // Block 3: Generate widget fee signature
         {
-            bytes32 widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, alice, address(router));
+            bytes32 widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, address(router));
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, widgetFeeDigest);
             quote.widgetFeeSignature = abi.encodePacked(r, s, v);
         }
@@ -530,6 +530,21 @@ contract NativeRouterTest is BaseTest {
             uint256 decayStartTime = block.timestamp - 30; // Started 30 seconds ago
             uint256 deadlineTimestamp = decayStartTime + 60; // Total 60-second window
 
+            // Calculate expected decay slippage to set appropriate amountOutMinimum
+            // timeRatio = 30 seconds / 60 seconds = 0.5 (with 1e6 precision = 500000)
+            uint256 timeRatio = 500_000; // 0.5 * 1e6
+            uint256 maxSlippageBps = 100; // 1%
+
+            // ratioPowered = timeRatio^2 = 0.25 (with 1e12 precision = 250000000000)
+            uint256 ratioPowered = timeRatio ** 2; // 500000^2 = 250000000000
+            uint256 scalePowered = 1e6 ** 2; // 1e12
+
+            // slippageBps = (250000000000 * 100 * 10000) / (1e12 * 10000) = 25 bps = 0.25%
+            uint256 slippageBps = (ratioPowered * maxSlippageBps * 10_000) / (scalePowered * 10_000);
+
+            // Reduce amountOutMinimum by the expected slippage
+            uint256 adjustedAmountOutMinimum = expectedUsdcAmount * (10_000 - slippageBps) / 10_000;
+
             quote = IQuote.RFQTQuote({
                 pool: poolAddress,
                 signer: halo,
@@ -543,7 +558,7 @@ contract NativeRouterTest is BaseTest {
                 // decay mechanism enabled
                 decayStartTime: decayStartTime,
                 decayExponent: 2, // Quadratic decay curve
-                maxSlippageBps: 100, // 1% maximum slippage
+                maxSlippageBps: maxSlippageBps, // 1% maximum slippage
                 // end decay mechanism
                 quoteId: bytes16(0),
                 multiHop: false,
@@ -551,7 +566,7 @@ contract NativeRouterTest is BaseTest {
                 widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: 0}),
                 widgetFeeSignature: bytes(""),
                 externalSwapCalldata: bytes(""),
-                amountOutMinimum: expectedUsdcAmount
+                amountOutMinimum: adjustedAmountOutMinimum
             });
         }
 
@@ -564,7 +579,7 @@ contract NativeRouterTest is BaseTest {
 
         // Block 3: Generate widget fee signature
         {
-            bytes32 widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, alice, address(router));
+            bytes32 widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, address(router));
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, widgetFeeDigest);
             quote.widgetFeeSignature = abi.encodePacked(r, s, v);
         }
@@ -616,6 +631,10 @@ contract NativeRouterTest is BaseTest {
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(haloKey, quoteDigest);
             bytes memory quoteSignature = abi.encodePacked(r, s, v);
 
+            // Calculate effective amount after widget fee for amountOutMinimum
+            uint256 effectiveSellerAmount = sellAmount - (sellAmount * widgetFeeRate / 10_000);
+            uint256 effectiveUsdcAmount = (effectiveSellerAmount * expectedUsdcAmount) / sellAmount;
+
             // Now create the actual quote with address(0) for native ETH
             quote = IQuote.RFQTQuote({
                 pool: poolAddress,
@@ -636,11 +655,11 @@ contract NativeRouterTest is BaseTest {
                 widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: widgetFeeRate}),
                 widgetFeeSignature: bytes(""),
                 externalSwapCalldata: bytes(""),
-                amountOutMinimum: expectedUsdcAmount
+                amountOutMinimum: effectiveUsdcAmount
             });
 
             // Generate widget fee signature
-            widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, alice, address(router));
+            widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, address(router));
         }
 
         // Block 3: Finalize widget fee signature

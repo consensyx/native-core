@@ -31,7 +31,6 @@ library SignatureUtils {
 
     function generateWidgetFeeSignature(
         IQuote.RFQTQuote memory quote,
-        address sender,
         address routerAddress
     ) internal view returns (bytes32) {
         bytes32 RFQ_QUOTE_WIDGET_SIGNATURE_HASH =

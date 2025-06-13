@@ -25,6 +25,8 @@ interface IQuote {
         uint256 sellerTokenAmount;
         /// @notice The amount of buyerToken bought when sellerTokenAmount is sold.
         uint256 buyerTokenAmount;
+        /// @notice Minimum buyerToken amount received
+        uint256 amountOutMinimum;
         /// @notice The Unix timestamp (in seconds) when the quote expires.
         /// @dev This gets checked against block.timestamp.
         uint256 deadlineTimestamp;
@@ -54,7 +56,5 @@ interface IQuote {
 
         /// @notice External swap calldata, different external swap router have different calldata
         bytes externalSwapCalldata;
-        /// @notice Minimum amount out for external swap (AMM)
-        uint256 amountOutMinimum;
     }
 }

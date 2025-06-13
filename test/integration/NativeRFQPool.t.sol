@@ -271,8 +271,7 @@ contract NativeRFQPoolTest is BaseTest {
         // Block 2: Generate widget fee signature
         {
             sigData.routerAddress = params.poolAddress == address(rfqPool) ? address(router) : address(router2);
-            sigData.widgetFeeDigest =
-                SignatureUtils.generateWidgetFeeSignature(quote, params.recipient, sigData.routerAddress);
+            sigData.widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, sigData.routerAddress);
             (sigData.v, sigData.r, sigData.s) = vm.sign(deployerKey, sigData.widgetFeeDigest);
             quote.widgetFeeSignature = abi.encodePacked(sigData.r, sigData.s, sigData.v);
         }

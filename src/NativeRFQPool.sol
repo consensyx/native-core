@@ -122,6 +122,11 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             buyerTokenAmount = buyerTokenAmount * (BPS_DENOMINATOR - slippageBps) / BPS_DENOMINATOR;
         }
 
+        require(
+            buyerTokenAmount >= quote.amountOutMinimum,
+            ErrorsLib.NotEnoughAmountOut(buyerTokenAmount, quote.amountOutMinimum)
+        );
+
         _transferAndCallback(
             quote.signer,
             quote.recipient,
