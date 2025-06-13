@@ -379,8 +379,9 @@ contract NativeLPToken is ERC20, Ownable2Step, ReentrancyGuardTransient {
 
         // Calculate shares to mint
         if (totalShares == 0) {
+            // Lock 1000 shares from first depositor to prevent inflation attack
             _mintShares(address(0), MINIMUM_SHARE);
-            sharesToMint = amount; // Initial shares 1:1
+            sharesToMint = amount - MINIMUM_SHARE;
         } else {
             sharesToMint = (amount * totalShares) / totalUnderlying;
         }

@@ -43,15 +43,15 @@ contract NativeLPTokenTest is BaseTest {
         uint256 mintedShares = lpUSDC.deposit(depositAmount);
         vm.stopPrank();
 
-        // Verify states - account for MINIMUM_SHARE on first deposit
-        uint256 expectedTotalShares = initialTotalShares + depositAmount + MINIMUM_SHARE;
+        // Verify states - account for MINIMUM_SHARE deducted from first deposit
+        uint256 expectedTotalShares = initialTotalShares + depositAmount;
 
-        assertEq(mintedShares, depositAmount, "Incorrect shares minted");
+        assertEq(mintedShares, depositAmount - MINIMUM_SHARE, "Incorrect shares minted");
         assertEq(lpUSDC.totalShares(), expectedTotalShares, "Incorrect total shares");
         assertEq(lpUSDC.totalUnderlying(), initialTotalUnderlying + depositAmount, "Incorrect total underlying");
         assertEq(USDC.balanceOf(alice), initialBalance - depositAmount, "Incorrect user balance");
         assertEq(USDC.balanceOf(address(creditVault)), initialVaultBalance + depositAmount, "Incorrect vault balance");
-        assertEq(lpUSDC.shares(alice), depositAmount, "Incorrect user shares");
+        assertEq(lpUSDC.shares(alice), depositAmount - MINIMUM_SHARE, "Incorrect user shares");
         assertEq(lpUSDC.lastDepositTimestamp(alice), block.timestamp, "Incorrect last deposit timestamp");
     }
 
@@ -119,7 +119,7 @@ contract NativeLPTokenTest is BaseTest {
         vm.stopPrank();
 
         // After first deposit, get current state
-        uint256 totalSharesAfterFirst = lpUSDC.totalShares(); // 100_000_000 + MINIMUM_SHARE
+        uint256 totalSharesAfterFirst = lpUSDC.totalShares(); // 100_000_000 (MINIMUM_SHARE deducted from first depositor)
         uint256 totalUnderlyingAfterFirst = lpUSDC.totalUnderlying(); // 100_000_000
 
         // Second user deposits
@@ -132,7 +132,7 @@ contract NativeLPTokenTest is BaseTest {
         uint256 expectedBobShares = (200_000_000 * totalSharesAfterFirst) / totalUnderlyingAfterFirst;
 
         // Verify share calculations
-        assertEq(aliceShares, 100_000_000, "Incorrect shares for first user");
+        assertEq(aliceShares, 100_000_000 - MINIMUM_SHARE, "Incorrect shares for first user");
         assertEq(bobShares, expectedBobShares, "Incorrect shares for second user");
         assertEq(lpUSDC.totalShares(), aliceShares + bobShares + MINIMUM_SHARE, "Incorrect total shares");
     }
@@ -428,7 +428,7 @@ contract NativeLPTokenTest is BaseTest {
         vm.startPrank(alice);
         USDC.approve(address(lpUSDC), depositAmount);
         lpUSDC.deposit(depositAmount);
-        assertEq(lpUSDC.shares(alice), depositAmount);
+        assertEq(lpUSDC.shares(alice), depositAmount - MINIMUM_SHARE);
         vm.stopPrank();
 
         // Warp forward past the minimum redeem interval
@@ -487,7 +487,7 @@ contract NativeLPTokenTest is BaseTest {
         vm.startPrank(alice);
         uint256 aliceFirstDeposit = 111_111_111;
         aliceFirstShares = lpUSDC.deposit(aliceFirstDeposit);
-        assertEq(aliceFirstShares, aliceFirstDeposit, "Alice's first shares incorrect");
+        assertEq(aliceFirstShares, aliceFirstDeposit - MINIMUM_SHARE, "Alice's first shares incorrect");
         vm.stopPrank();
 
         // Advance 1 hour
@@ -755,7 +755,7 @@ contract NativeLPTokenTest is BaseTest {
         vm.stopPrank();
 
         // Verify states remain unchanged
-        assertEq(lpUSDC.shares(alice), depositAmount, "Alice's shares should remain unchanged");
+        assertEq(lpUSDC.shares(alice), depositAmount - MINIMUM_SHARE, "Alice's shares should remain unchanged");
         assertEq(lpUSDC.shares(bob), 0, "Bob should have no shares");
 
         // Warp time to after cooldown period
@@ -769,7 +769,7 @@ contract NativeLPTokenTest is BaseTest {
         // Verify transfer succeeded
         assertEq(
             lpUSDC.shares(alice),
-            depositAmount - lpUSDC.getSharesByUnderlying(transferAmount),
+            (depositAmount - MINIMUM_SHARE) - lpUSDC.getSharesByUnderlying(transferAmount),
             "Alice's remaining shares incorrect"
         );
         assertEq(lpUSDC.shares(bob), lpUSDC.getSharesByUnderlying(transferAmount), "Bob's received shares incorrect");
@@ -808,7 +808,7 @@ contract NativeLPTokenTest is BaseTest {
         // Verify transfer succeeded
         assertEq(
             lpUSDC.shares(alice),
-            depositAmount - lpUSDC.getSharesByUnderlying(transferAmount),
+            (depositAmount - MINIMUM_SHARE) - lpUSDC.getSharesByUnderlying(transferAmount),
             "Alice's remaining shares incorrect"
         );
         assertEq(lpUSDC.shares(bob), lpUSDC.getSharesByUnderlying(transferAmount), "Bob's received shares incorrect");
@@ -893,7 +893,7 @@ contract NativeLPTokenTest is BaseTest {
         vm.stopPrank();
 
         // Verify transfer succeeded
-        assertEq(lpUSDC.shares(alice), depositAmount - sharesToTransfer, "Incorrect sender shares");
+        assertEq(lpUSDC.shares(alice), (depositAmount - MINIMUM_SHARE) - sharesToTransfer, "Incorrect sender shares");
         assertEq(lpUSDC.shares(bob), sharesToTransfer, "Incorrect recipient shares");
         assertEq(transferredAmount, lpUSDC.getUnderlyingByShares(sharesToTransfer), "Incorrect transferred amount");
     }
@@ -933,16 +933,16 @@ contract NativeLPTokenTest is BaseTest {
         uint256 mintedShares = lpUSDC.depositFor(bob, depositAmount);
         vm.stopPrank();
 
-        // Verify states - account for MINIMUM_SHARE on first deposit
-        uint256 expectedTotalShares = initialTotalShares + depositAmount + MINIMUM_SHARE;
-        uint256 expectedMintedShares = depositAmount;
+        // Verify states - account for MINIMUM_SHARE deducted from first deposit
+        uint256 expectedTotalShares = initialTotalShares + depositAmount;
+        uint256 expectedMintedShares = depositAmount - MINIMUM_SHARE;
 
         assertEq(mintedShares, expectedMintedShares, "Incorrect shares minted");
         assertEq(lpUSDC.totalShares(), expectedTotalShares, "Incorrect total shares");
         assertEq(lpUSDC.totalUnderlying(), initialTotalUnderlying + depositAmount, "Incorrect total underlying");
         assertEq(USDC.balanceOf(alice), initialBalance - depositAmount, "Incorrect depositor balance");
         assertEq(USDC.balanceOf(address(creditVault)), initialVaultBalance + depositAmount, "Incorrect vault balance");
-        assertEq(lpUSDC.shares(bob), depositAmount, "Incorrect recipient shares");
+        assertEq(lpUSDC.shares(bob), depositAmount - MINIMUM_SHARE, "Incorrect recipient shares");
         assertEq(lpUSDC.lastDepositTimestamp(bob), block.timestamp, "Incorrect last deposit timestamp");
     }
 
@@ -1081,7 +1081,7 @@ contract NativeLPTokenTest is BaseTest {
         uint256 expectedCharlieShares = (200_000_000 * totalSharesAfterFirst) / totalUnderlyingAfterFirst;
 
         // Verify share calculations
-        assertEq(aliceDepositShares, 100_000_000, "Incorrect shares for first deposit");
+        assertEq(aliceDepositShares, 100_000_000 - MINIMUM_SHARE, "Incorrect shares for first deposit");
         assertEq(charlieDepositShares, expectedCharlieShares, "Incorrect shares for second deposit");
         assertEq(lpUSDC.shares(bob), aliceDepositShares + charlieDepositShares, "Incorrect total recipient shares");
         assertEq(lpUSDC.shares(alice), 0, "Depositor should not receive shares");

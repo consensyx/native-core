@@ -12,7 +12,6 @@ import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 contract NativeLPTokenFuzzTest is BaseTest {
     // Set reasonable amount range to avoid overflow
     uint256 constant MAX_DEPOSIT = type(uint128).max;
-    uint256 constant MINIMUM_SHARE = 1000;
 
     function setUp() public override {
         super.setUp();
@@ -41,9 +40,9 @@ contract NativeLPTokenFuzzTest is BaseTest {
         uint256 expectedTotalShares;
 
         if (initialTotalShares == 0) {
-            // First deposit: user gets amount, address(0) gets MINIMUM_SHARE
-            expectedShares = amount;
-            expectedTotalShares = amount + MINIMUM_SHARE;
+            // First deposit: user gets amount - MINIMUM_SHARE, address(0) gets MINIMUM_SHARE
+            expectedShares = amount - MINIMUM_SHARE;
+            expectedTotalShares = amount;
         } else {
             // Subsequent deposit: calculate proportional shares
             expectedShares = (amount * initialTotalShares) / initialTotalUnderlying;
@@ -188,6 +187,9 @@ contract NativeLPTokenFuzzTest is BaseTest {
 
         // Calculate redeemShares as a percentage of mintedShares
         uint256 redeemShares = (mintedShares * redeemSharesPercent) / 10_000;
+
+        // Skip test if redeemShares is 0
+        if (redeemShares == 0) return;
 
         // Record states before redeem
         uint256 initialBalance = USDC.balanceOf(address(this));

@@ -127,11 +127,12 @@ contract CreditVaultTest is BaseTest {
 
     function test_epochUpdate_exchangeRateLimit() public {
         // Setup initial LP token state with small totalUnderlying
-        deal(address(USDC), alice, 1000);
+        // Need to ensure deposit amount > MINIMUM_SHARE (1000) to avoid ZeroAmount error
+        deal(address(USDC), alice, 2000);
 
         // Alice approves and deposits
         vm.startPrank(alice);
-        USDC.approve(address(lpUSDC), 1000);
+        USDC.approve(address(lpUSDC), 2000);
         vm.stopPrank();
 
         // Deployer sets minDeposit and Alice deposits
@@ -140,7 +141,7 @@ contract CreditVaultTest is BaseTest {
         vm.stopPrank();
 
         vm.startPrank(alice);
-        lpUSDC.deposit(1000);
+        lpUSDC.deposit(2000); // Changed from 1000 to 2000 to account for MINIMUM_SHARE deduction
         vm.stopPrank();
 
         // Create fee update with large lpFee that would cause exchange rate to increase too much

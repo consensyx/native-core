@@ -58,7 +58,7 @@ contract NativeLPTokenERC20Test is BaseTest {
 
         // Verify total supply and shares remain unchanged
         assertEq(lpUSDC.totalSupply(), INITIAL_DEPOSIT, "Total supply should not change");
-        assertEq(lpUSDC.totalShares(), INITIAL_DEPOSIT + MINIMUM_SHARE, "Total shares should not change");
+        assertEq(lpUSDC.totalShares(), INITIAL_DEPOSIT, "Total shares should not change");
     }
 
     function test_transfer_zeroAddress() public {
@@ -145,8 +145,8 @@ contract NativeLPTokenERC20Test is BaseTest {
         depositAmounts[8] = 9_999_999; // 9.999999 USDC
         depositAmounts[9] = 1_234_567; // 1.234567 USDC
 
-        // Calculate expected total shares accounting for MINIMUM_SHARE dilution
-        uint256 expectedTotalShares = INITIAL_DEPOSIT + MINIMUM_SHARE; // After Alice's initial deposit
+        // Calculate expected total shares accounting for MINIMUM_SHARE deducted from first depositor
+        uint256 expectedTotalShares = INITIAL_DEPOSIT; // After Alice's initial deposit (MINIMUM_SHARE deducted)
         uint256 expectedTotalUnderlying = INITIAL_DEPOSIT; // Alice's initial deposit
 
         // For each subsequent deposit, calculate shares based on current rate
