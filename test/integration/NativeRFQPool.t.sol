@@ -245,7 +245,6 @@ contract NativeRFQPoolTest is BaseTest {
                 nonce: 0,
                 multiHop: false,
                 signature: bytes(""),
-                externalSwapCalldata: bytes(""),
                 quoteId: bytes16(0),
                 widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: 0}),
                 widgetFeeSignature: bytes("")

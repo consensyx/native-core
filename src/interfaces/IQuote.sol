@@ -8,9 +8,6 @@ interface IQuote {
     }
 
     struct RFQTQuote {
-        /*//////////////////////////////////////////////////////////////////////////
-                            RFQ QUOTE ONLY FIELDS
-        //////////////////////////////////////////////////////////////////////////*/
         /// @notice RFQ pool address or external swap router address
         address pool;
         /// @notice market maker
@@ -50,11 +47,5 @@ interface IQuote {
         WidgetFee widgetFee;
         /// @notice Widget fee signature
         bytes widgetFeeSignature;
-        /*//////////////////////////////////////////////////////////////////////////
-                            EXTERNAL SWAP ONLY FIELDS
-        //////////////////////////////////////////////////////////////////////////*/
-
-        /// @notice External swap calldata, different external swap router have different calldata
-        bytes externalSwapCalldata;
     }
 }

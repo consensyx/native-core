@@ -13,7 +13,6 @@ import {IWETH9} from "./interfaces/IWETH9.sol";
 import {INativeRouter} from "./interfaces/INativeRouter.sol";
 
 import "./libraries/ConstantsLib.sol";
-import {Orders} from "./libraries/Order.sol";
 import {Multicall} from "./libraries/Multicall.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {TransferHelper} from "./libraries/TransferHelper.sol";
@@ -21,29 +20,22 @@ import {ReentrancyGuardTransient} from "./libraries/ReentrancyGuardTransient.sol
 
 import {CreditVault} from "./CreditVault.sol";
 import {NativeRFQPool} from "./NativeRFQPool.sol";
-import {ExternalSwap} from "./libraries/ExternalSwap.sol";
 
 contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multicall, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
+    /// @dev Address of the CreditVault
+    address public vault;
+
     /// @dev Address of the Wrapped Ether (WETH9) contract
     address public immutable WETH9;
-
-    /// @dev Maximum amount deviation in basis points (10%)
-    uint256 constant MAX_AMOUNT_DEVIATION_BPS = 1000;
-
-    /// @dev Address of the CreditVault contract that manages credit and native pools
-    address public vault;
 
     /// @notice Mapping of all trusted Native pools
     mapping(address => bool) public isNativePools;
 
-    /// @dev Address of signer authorized to sign tradeRFQT and fillOrder signatures
+    /// @dev Address of signer authorized to sign tradeRFQT signatures
     mapping(address => bool) public signers;
-
-    /// @dev Mapping to track which external routers are whitelisted for swaps
-    mapping(address => bool) public whitelistRouter;
 
     /*//////////////////////////////////////////////////////////////////////////
                                      RECEIVE FUNCTION
@@ -79,20 +71,17 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
         uint256 actualSellerAmount,
         uint256 actualMinOutputAmount
     ) external payable override nonReentrant whenNotPaused {
-        require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
         require(block.timestamp <= quote.deadlineTimestamp, ErrorsLib.QuoteExpired());
         require(quote.decayExponent <= MAX_DECAY_EXPONENT, ErrorsLib.InvalidDecayExponent());
+        require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
+        require(isNativePools[quote.pool], ErrorsLib.InvalidNativePool());
 
         _verifyRFQSignature(quote);
-
-        bool isNativePool = isNativePools[quote.pool];
-        // address(this) is used for externalSwap
-        address payee = isNativePool ? NativeRFQPool(payable(quote.pool)).treasury() : address(this);
 
         // set effective amount to quote amount first
         uint256 effectiveSellerTokenAmount = quote.sellerTokenAmount;
 
-        // adjust the effectiveSellerTokenAmount and amountOutMinimum if given
+        // adjust the effectiveSellerTokenAmount and amountOutMinimum
         if (actualSellerAmount > 0) {
             uint256 deviation = (
                 actualSellerAmount > quote.sellerTokenAmount
@@ -100,7 +89,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
                     : quote.sellerTokenAmount - actualSellerAmount
             ) * 10_000 / quote.sellerTokenAmount;
 
-            require(deviation < MAX_AMOUNT_DEVIATION_BPS, "actual amount deviation exceeds 10%");
+            require(deviation < MAX_AMOUNT_DEVIATION_BPS, ErrorsLib.AmountDeviationExceeds());
 
             effectiveSellerTokenAmount = actualSellerAmount;
         }
@@ -109,38 +98,16 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
             quote.amountOutMinimum = actualMinOutputAmount;
         }
 
-        // cut widget fee based on the actual amount
-        effectiveSellerTokenAmount =
-            _transferSellerToken(quote.multiHop, payee, quote.sellerToken, effectiveSellerTokenAmount, quote.widgetFee);
+        // charge widget fee based on the actual amount
+        effectiveSellerTokenAmount = _transferSellerToken(
+            quote.multiHop,
+            NativeRFQPool(payable(quote.pool)).treasury(),
+            quote.sellerToken,
+            effectiveSellerTokenAmount,
+            quote.widgetFee
+        );
 
-        if (isNativePool) {
-            NativeRFQPool(payable(quote.pool)).tradeRFQT(effectiveSellerTokenAmount, quote);
-        } else if (whitelistRouter[quote.pool]) {
-            Orders.Order memory order = Orders.Order({
-                id: 0, // not used
-                signer: address(0), // not used
-                buyer: quote.pool,
-                seller: address(0), // not used
-                buyerToken: quote.buyerToken,
-                sellerToken: quote.sellerToken,
-                buyerTokenAmount: quote.buyerTokenAmount,
-                sellerTokenAmount: quote.sellerTokenAmount,
-                deadlineTimestamp: quote.deadlineTimestamp,
-                caller: msg.sender,
-                quoteId: quote.quoteId
-            });
-
-            uint256 actualAmountOut = ExternalSwap.externalSwap(
-                order, effectiveSellerTokenAmount, quote.recipient, address(this), quote.externalSwapCalldata
-            );
-
-            require(
-                actualAmountOut >= quote.amountOutMinimum,
-                ErrorsLib.NotEnoughAmountOut(actualAmountOut, quote.amountOutMinimum)
-            );
-        } else {
-            revert ErrorsLib.InvalidNativePool();
-        }
+        NativeRFQPool(payable(quote.pool)).tradeRFQT(effectiveSellerTokenAmount, quote);
     }
 
     /// @notice Unwraps WETH9 to ETH by unwrapping all WETH currently in this contract
@@ -202,20 +169,6 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
 
         signers[signer] = isSigner;
         emit SignerUpdated(signer, isSigner);
-    }
-
-    /// @notice Batch set whitelist status for external routers
-    /// @dev Can only be called by contract owner
-    /// @param routers Array of router addresses to be whitelisted/blacklisted
-    /// @param values Array of boolean values corresponding to each router
-    function setWhitelistRouter(address[] calldata routers, bool[] calldata values) external onlyOwner {
-        require(routers.length == values.length, ErrorsLib.ArraysLengthMismatch());
-
-        for (uint256 i; i < routers.length; ++i) {
-            whitelistRouter[routers[i]] = values[i];
-
-            emit WhitelistRouterSet(routers[i], values[i]);
-        }
     }
 
     /// @notice Updates native pool whitelist status
@@ -307,8 +260,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
                 quote.decayExponent,
                 quote.maxSlippageBps,
                 quote.multiHop,
-                quote.signature,
-                quote.externalSwapCalldata
+                quote.signature
             )
         );
 

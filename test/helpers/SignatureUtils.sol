@@ -61,8 +61,7 @@ library SignatureUtils {
                 quote.decayExponent,
                 quote.maxSlippageBps,
                 quote.multiHop,
-                quote.signature,
-                quote.externalSwapCalldata
+                quote.signature
             )
         );
     }

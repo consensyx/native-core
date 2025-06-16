@@ -5,32 +5,17 @@ pragma solidity 0.8.28;
 /// @notice This library contains all the error definitions used throughout the contract
 /// @dev The errors are arranged in alphabetical order
 library ErrorsLib {
-    /// @notice Thrown when array lengths don't match in a function requiring equal-length arrays
-    error ArraysLengthMismatch();
+    /// @notice Thrown when actual amount deviation exceeds 10%
+    error AmountDeviationExceeds();
 
     /// @notice Thrown when deposit amount is below minimum required
     error BelowMinimumDeposit();
-
-    /// @notice Thrown when caller is not the authorized epoch updater
-    error CallerNotEpochUpdater();
-
-    /// @notice Thrown when caller is not an authorized liquidator
-    error CallerNotLiquidator();
-
-    /// @notice Thrown when caller is not a trader or authorized settler
-    error CallerNotTraderSettler();
-
-    /// @notice Thrown when caller is not the WETH9 contract
-    error CallerNotWETH9();
 
     /// @notice Thrown when epoch update is attempted before minimum interval
     error EpochUpdateInCoolDown();
 
     /// @notice Thrown when LP token exchange rate increases more than allowed
     error ExchangeRateIncreaseTooMuch();
-
-    /// @notice Thrown when an external contract call fails
-    error ExternalCallFailed(address target, bytes4 selector);
 
     /// @notice Thrown when feature is paused
     error FeaturePaused();
@@ -92,9 +77,6 @@ library ErrorsLib {
     /// @notice Thrown when output amount is less than minimum required
     error NotEnoughAmountOut(uint256 amountOut, uint256 amountOutMinimum);
 
-    /// @notice Thrown when insufficient token output received
-    error NotEnoughTokenReceived();
-
     /// @notice Thrown the address is not a trader or liquidator
     error NotTraderOrLiquidator();
 
@@ -125,23 +107,14 @@ library ErrorsLib {
     /// @notice Thrown when caller is not the native router
     error OnlyNativeRouter();
 
-    /// @notice Thrown when caller is not the owner
-    error OnlyOwner();
-
     /// @notice Thrown when caller is not an authorized trader
     error OnlyTrader();
 
     /// @notice Thrown when caller is not the WETH9 contract
     error OnlyWETH9();
 
-    /// @notice Thrown when order has expired
-    error OrderExpired();
-
     /// @notice Thrown when arithmetic operation would overflow
     error Overflow();
-
-    /// @notice Thrown when permit2 token mismatch quote
-    error Permit2TokenMismatch();
 
     /// @notice Thrown when LP pool has no deposits yet
     error PoolNotInitialized();

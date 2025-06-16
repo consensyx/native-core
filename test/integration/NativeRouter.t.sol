@@ -149,7 +149,6 @@ contract NativeRouterTest is BaseTest {
                 signature: bytes(""),
                 widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: widgetFeeRate}),
                 widgetFeeSignature: bytes(""),
-                externalSwapCalldata: bytes(""),
                 amountOutMinimum: effectiveUsdcAmount
             });
         }
@@ -391,7 +390,6 @@ contract NativeRouterTest is BaseTest {
                 signature: bytes(""),
                 widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: params.widgetFeeRate}),
                 widgetFeeSignature: bytes(""),
-                externalSwapCalldata: bytes(""),
                 amountOutMinimum: amountOutMinimum
             });
         }
@@ -494,7 +492,6 @@ contract NativeRouterTest is BaseTest {
                 signature: bytes(""),
                 widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: 0}),
                 widgetFeeSignature: bytes(""),
-                externalSwapCalldata: bytes(""),
                 amountOutMinimum: expectedUsdcAmount
             });
         }
@@ -565,7 +562,6 @@ contract NativeRouterTest is BaseTest {
                 signature: bytes(""),
                 widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: 0}),
                 widgetFeeSignature: bytes(""),
-                externalSwapCalldata: bytes(""),
                 amountOutMinimum: adjustedAmountOutMinimum
             });
         }
@@ -618,7 +614,6 @@ contract NativeRouterTest is BaseTest {
                 signature: bytes(""),
                 widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: widgetFeeRate}),
                 widgetFeeSignature: bytes(""),
-                externalSwapCalldata: bytes(""),
                 amountOutMinimum: expectedUsdcAmount
             });
 
@@ -654,7 +649,6 @@ contract NativeRouterTest is BaseTest {
                 signature: quoteSignature, // Use signature generated with WETH
                 widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: widgetFeeRate}),
                 widgetFeeSignature: bytes(""),
-                externalSwapCalldata: bytes(""),
                 amountOutMinimum: effectiveUsdcAmount
             });
 

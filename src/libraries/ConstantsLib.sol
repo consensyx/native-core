@@ -7,6 +7,9 @@ uint256 constant MINIMUM_SHARE = 10 ** 3;
 /// @dev Every interval, the system performs an epoch update to calculate and settle funding fees between traders
 uint256 constant EPOCH_UPDATE_INTERVAL = 8 hours;
 
+/// @dev Maximum seller token amount deviation in basis points (10%)
+uint256 constant MAX_AMOUNT_DEVIATION_BPS = 1000;
+
 /// @dev Maximum early withdrawal fee in basis points (10%)
 uint256 constant MAX_EARLY_WITHDRAW_FEE_BIPS = 1000;
 
@@ -41,8 +44,3 @@ bytes32 constant ORDER_SIGNATURE_HASH = keccak256(
 /// @dev The EIP-712 typeHash for RFQ Quote Widget Authorization.
 bytes32 constant RFQ_QUOTE_WIDGET_SIGNATURE_HASH =
     keccak256("RFQTQuote(bytes32 quote,address widgetFeeRecipient,uint256 widgetFeeRate)");
-
-/// @dev The EIP-712 typeHash for Fill Order Authorization.
-bytes32 constant FILL_ORDER_SIGNATURE_HASH = keccak256(
-    "fillOrder(uint256 nonce,address recipient,address tokenIn,address tokenOut,uint256 amountIn,uint256 amountOut,uint256 deadline,address widgetFeeRecipient,uint256 widgetFeeRate)"
-);

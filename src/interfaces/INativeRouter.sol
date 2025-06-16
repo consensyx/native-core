@@ -37,7 +37,4 @@ interface INativeRouter is IQuote {
 
     /// @notice Emitted when WETH9 is unwrapped
     event UnwrapWETH9(address indexed recipient, uint256 amount);
-
-    /// @notice Emitted when router is whitelisted or blacklisted
-    event WhitelistRouterSet(address indexed router, bool isWhitelisted);
 }

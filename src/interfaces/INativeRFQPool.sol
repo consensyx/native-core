@@ -16,9 +16,6 @@ interface INativeRFQPool is IQuote {
     /// @notice Emitted when treasury address is set
     event TreasurySet(address treasury);
 
-    /// @notice Event emitted when a whitelisted signer status is updated
-    event WhitelistedSignerUpdated(address indexed account, bool status);
-
     /// @notice Emitted when an RFQ trade is executed
     event RFQTrade(
         address recipient,
