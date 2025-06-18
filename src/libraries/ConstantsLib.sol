@@ -38,7 +38,7 @@ bytes32 constant LIQUIDATION_REQUEST_SIGNATURE_HASH = keccak256(
 
 /// @dev The EIP-712 typeHash for Market Maker RFQ Quote Authorization.
 bytes32 constant ORDER_SIGNATURE_HASH = keccak256(
-    "Order(uint256 id,address signer,address buyerToken,address sellerToken,uint256 buyerTokenAmount,uint256 sellerTokenAmount,uint256 deadlineTimestamp,uint256 decayStartTime,uint256 decayExponent,uint256 maxSlippageBps,bytes16 quoteId)"
+    "Order(uint256 nonce,address signer,address buyerToken,address sellerToken,uint256 buyerTokenAmount,uint256 sellerTokenAmount,uint256 deadlineTimestamp,uint256 decayStartTime,uint256 decayExponent,uint256 maxSlippageBps,bytes16 quoteId)"
 );
 
 /// @dev The EIP-712 typeHash for RFQ Quote Widget Authorization.
