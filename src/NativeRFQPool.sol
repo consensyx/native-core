@@ -105,7 +105,7 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             : quote.buyerTokenAmount;
 
         // Only calculate time decay slippage if decayExponent > 0
-        if (quote.decayExponent > 0) {
+        if (quote.decayExponent > 0 && block.timestamp > quote.decayStartTime) {
             // Calculate time ratio with 1e6 precision: preserves accuracy while preventing overflow risk with exponentiation
             uint256 timeRatio =
                 ((block.timestamp - quote.decayStartTime) * 1e6) / (quote.deadlineTimestamp - quote.decayStartTime);
