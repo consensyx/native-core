@@ -8,7 +8,7 @@ interface IQuote {
     }
 
     struct RFQTQuote {
-        /// @notice RFQ pool address or external swap router address
+        /// @notice RFQ pool address
         address pool;
         /// @notice market maker
         address signer;
@@ -25,12 +25,13 @@ interface IQuote {
         /// @notice Minimum buyerToken amount received
         uint256 amountOutMinimum;
         /// @notice The Unix timestamp (in seconds) when the quote expires.
-        /// @dev This gets checked against block.timestamp.
         uint256 deadlineTimestamp;
         /// @notice Nonces are used to protect against replay.
         uint256 nonce;
-        /// @notice Start time for price decay mechanism (Unix timestamp)Add commentMore actions
+        /// @notice Start time for price decay mechanism
         uint256 decayStartTime;
+        /// @notice End time for price decay mechanism
+        uint256 decayEndTime;
         /// @notice Exponent controlling the steepness of decay curve
         uint256 decayExponent;
         /// @notice Maximum allowable slippage in basis points

@@ -6,8 +6,8 @@ import "../../src/interfaces/ICreditVault.sol";
 
 library SignatureUtils {
     function generateQuoteSignature(IQuote.RFQTQuote memory quote) internal view returns (bytes32) {
-        // keccak256("Order(uint256 nonce,address signer,address buyerToken,address sellerToken,uint256 buyerTokenAmount,uint256 sellerTokenAmount,uint256 deadlineTimestamp,uint256 decayStartTime,uint256 decayExponent,uint256 maxSlippageBps,bytes16 quoteId)");
-        bytes32 ORDER_SIGNATURE_HASH = 0x1114510eccb8ce7d24dea8c55add8a45eb516d484c2b4f83323e5b456cf6aed8;
+        // keccak256("Order(uint256 nonce,address signer,address buyerToken,address sellerToken,uint256 buyerTokenAmount,uint256 sellerTokenAmount,uint256 deadlineTimestamp,uint256 decayStartTime,uint256 decayEndTime,uint256 decayExponent,uint256 maxSlippageBps,bytes16 quoteId)");
+        bytes32 ORDER_SIGNATURE_HASH = 0x4565bd20a17f238b49f99e4a1b2efa1e0c58f85e5c81d4f4a8957f3b991c4f8a;
 
         bytes32 quoteStructHash = keccak256(
             abi.encode(
@@ -20,6 +20,7 @@ library SignatureUtils {
                 quote.sellerTokenAmount,
                 quote.deadlineTimestamp,
                 quote.decayStartTime,
+                quote.decayEndTime,
                 quote.decayExponent,
                 quote.maxSlippageBps,
                 quote.quoteId

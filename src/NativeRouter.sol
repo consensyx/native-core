@@ -72,6 +72,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
         uint256 actualMinOutputAmount
     ) external payable override nonReentrant whenNotPaused {
         require(block.timestamp <= quote.deadlineTimestamp, ErrorsLib.QuoteExpired());
+        require(quote.decayEndTime <= quote.deadlineTimestamp, ErrorsLib.InvalidDecayEndTime());
         require(quote.decayExponent <= MAX_DECAY_EXPONENT, ErrorsLib.InvalidDecayExponent());
         require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
         require(isNativePools[quote.pool], ErrorsLib.InvalidNativePool());
@@ -83,13 +84,17 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
 
         // adjust the effectiveSellerTokenAmount and amountOutMinimum
         if (actualSellerAmount > 0) {
-            uint256 deviation = (
-                actualSellerAmount > quote.sellerTokenAmount
-                    ? actualSellerAmount - quote.sellerTokenAmount
-                    : quote.sellerTokenAmount - actualSellerAmount
-            ) * 10_000 / quote.sellerTokenAmount;
-
-            require(deviation < MAX_AMOUNT_DEVIATION_BPS, ErrorsLib.AmountDeviationExceeds());
+            if (actualSellerAmount > quote.sellerTokenAmount) {
+                // Upward deviation: max 10%
+                uint256 upwardDeviation =
+                    (actualSellerAmount - quote.sellerTokenAmount) * 10_000 / quote.sellerTokenAmount;
+                require(upwardDeviation < MAX_AMOUNT_UPWARD_DEVIATION_BPS, ErrorsLib.AmountDeviationExceeds());
+            } else {
+                // Downward deviation: max 50%
+                uint256 downwardDeviation =
+                    (quote.sellerTokenAmount - actualSellerAmount) * 10_000 / quote.sellerTokenAmount;
+                require(downwardDeviation < MAX_AMOUNT_DOWNWARD_DEVIATION_BPS, ErrorsLib.AmountDeviationExceeds());
+            }
 
             effectiveSellerTokenAmount = actualSellerAmount;
         }

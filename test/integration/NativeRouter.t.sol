@@ -142,6 +142,7 @@ contract NativeRouterTest is BaseTest {
                 deadlineTimestamp: block.timestamp + 1 hours,
                 nonce: 0,
                 decayStartTime: 0,
+                decayEndTime: block.timestamp + 1 hours,
                 decayExponent: 0,
                 maxSlippageBps: 0,
                 quoteId: bytes16(uint128(1)),
@@ -263,7 +264,7 @@ contract NativeRouterTest is BaseTest {
         _executeMultiHopTest();
     }
 
-    function test_measureGasUsage() public {
+    function test_measureGasUsageWithDecay() public {
         setupPMM();
 
         // Set a proper current time to avoid underflow in decay calculation
@@ -305,6 +306,49 @@ contract NativeRouterTest is BaseTest {
         console.log("Time elapsed (seconds):", block.timestamp - quote.decayStartTime);
         console.log("Gas used for tradeRFQT:", gasUsed);
         console.log("====================================");
+    }
+
+    function test_measureGasUsageWithoutDecay() public {
+        setupPMM();
+
+        // Set a proper current time to avoid underflow in decay calculation
+        vm.warp(1000); // Set current time to 1000 seconds
+
+        // Mint WETH for Alice
+        deal(address(weth), alice, 10 ether);
+
+        // Calculate amounts
+        uint256 ethPriceInUsdc = 3000 * 10 ** 6;
+        uint256 sellAmount = _calculateSellAmount();
+        uint256 expectedUsdcAmount = sellAmount * ethPriceInUsdc / 1 ether;
+
+        // Setup vault USDC balance
+        deal(address(USDC), bob, expectedUsdcAmount);
+        vm.startPrank(bob);
+        USDC.approve(address(lpUSDC), expectedUsdcAmount);
+        lpUSDC.deposit(expectedUsdcAmount);
+        vm.stopPrank();
+
+        // Create quote WITHOUT decay mechanism
+        IQuote.RFQTQuote memory quote = _createQuote(address(rfqPool), sellAmount, expectedUsdcAmount);
+
+        vm.startPrank(alice);
+        weth.approve(address(router), sellAmount);
+
+        // Measure gas usage
+        uint256 gasStart = gasleft();
+        router.tradeRFQT(quote, quote.sellerTokenAmount, quote.amountOutMinimum);
+        uint256 gasUsed = gasStart - gasleft();
+
+        vm.stopPrank();
+
+        console.log("=== Gas Usage Report (Without Decay) ===");
+        console.log("Trade amount (WETH):", sellAmount);
+        console.log("Expected USDC out:", expectedUsdcAmount);
+        console.log("DecayExponent:", quote.decayExponent);
+        console.log("MaxSlippageBps:", quote.maxSlippageBps);
+        console.log("Gas used for tradeRFQT:", gasUsed);
+        console.log("========================================");
     }
 
     function _executeMultiHopTest() internal {
@@ -383,6 +427,7 @@ contract NativeRouterTest is BaseTest {
                 deadlineTimestamp: block.timestamp + 1 hours,
                 nonce: params.nonce,
                 decayStartTime: 0,
+                decayEndTime: block.timestamp + 1 hours,
                 decayExponent: 0,
                 maxSlippageBps: 0,
                 quoteId: bytes16(uint128(params.quoteId)),
@@ -485,6 +530,7 @@ contract NativeRouterTest is BaseTest {
                 deadlineTimestamp: block.timestamp + 1 hours,
                 nonce: 0,
                 decayStartTime: 0,
+                decayEndTime: block.timestamp + 1 hours,
                 decayExponent: 0,
                 maxSlippageBps: 0,
                 quoteId: bytes16(0),
@@ -523,20 +569,22 @@ contract NativeRouterTest is BaseTest {
 
         // Block 1: Calculate timing and create quote structure
         {
-            // Simulate 60-second window with current time at halfway point (30 seconds)
+            // Simulate decay window with current time at halfway point
             uint256 decayStartTime = block.timestamp - 30; // Started 30 seconds ago
-            uint256 deadlineTimestamp = decayStartTime + 60; // Total 60-second window
+            uint256 deadlineTimestamp = decayStartTime + 60; // Total 60-second deadline
+            uint256 decayEndTime = deadlineTimestamp - 20; // Decay ends 20 seconds before deadline
 
-            // Calculate expected decay slippage to set appropriate amountOutMinimum
-            // timeRatio = 30 seconds / 60 seconds = 0.5 (with 1e6 precision = 500000)
-            uint256 timeRatio = 500_000; // 0.5 * 1e6
+            // Effective decay window is now 40 seconds (decayStartTime to decayEndTime)
+            // Current time progress: 30 seconds into 40-second window
+            // timeRatio = 30 seconds / 40 seconds = 0.75 (with 1e6 precision = 750000)
+            uint256 timeRatio = 750_000; // 0.75 * 1e6
             uint256 maxSlippageBps = 100; // 1%
 
-            // ratioPowered = timeRatio^2 = 0.25 (with 1e12 precision = 250000000000)
-            uint256 ratioPowered = timeRatio ** 2; // 500000^2 = 250000000000
+            // ratioPowered = timeRatio^2 = 0.5625 (with 1e12 precision = 562500000000)
+            uint256 ratioPowered = timeRatio ** 2; // 750000^2 = 562500000000
             uint256 scalePowered = 1e6 ** 2; // 1e12
 
-            // slippageBps = (250000000000 * 100 * 10000) / (1e12 * 10000) = 25 bps = 0.25%
+            // slippageBps = (562500000000 * 100 * 10000) / (1e12 * 10000) = 56.25 bps = 0.5625%
             uint256 slippageBps = (ratioPowered * maxSlippageBps * 10_000) / (scalePowered * 10_000);
 
             // Reduce amountOutMinimum by the expected slippage
@@ -554,6 +602,7 @@ contract NativeRouterTest is BaseTest {
                 nonce: 0,
                 // decay mechanism enabled
                 decayStartTime: decayStartTime,
+                decayEndTime: decayEndTime,
                 decayExponent: 2, // Quadratic decay curve
                 maxSlippageBps: maxSlippageBps, // 1% maximum slippage
                 // end decay mechanism
@@ -607,6 +656,7 @@ contract NativeRouterTest is BaseTest {
                 deadlineTimestamp: block.timestamp + 1 hours,
                 nonce: 0,
                 decayStartTime: 0,
+                decayEndTime: block.timestamp + 1 hours,
                 decayExponent: 0,
                 maxSlippageBps: 0,
                 quoteId: bytes16(0),
@@ -642,6 +692,7 @@ contract NativeRouterTest is BaseTest {
                 deadlineTimestamp: block.timestamp + 1 hours,
                 nonce: 0,
                 decayStartTime: 0,
+                decayEndTime: block.timestamp + 1 hours,
                 decayExponent: 0,
                 maxSlippageBps: 0,
                 quoteId: bytes16(0),

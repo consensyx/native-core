@@ -35,6 +35,9 @@ library ErrorsLib {
     /// @notice Thrown when an amount parameter is invalid
     error InvalidAmount();
 
+    /// @notice Thrown when decay end time is invalid
+    error InvalidDecayEndTime();
+
     /// @notice Thrown when decay exponent is invalid
     error InvalidDecayExponent();
 

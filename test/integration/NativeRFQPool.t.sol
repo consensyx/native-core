@@ -239,6 +239,7 @@ contract NativeRFQPoolTest is BaseTest {
                 deadlineTimestamp: block.timestamp + 1 hours,
                 // decay mechanism
                 decayStartTime: block.timestamp,
+                decayEndTime: block.timestamp + 1 hours,
                 decayExponent: 0,
                 maxSlippageBps: 0,
                 // end decay mechanism
