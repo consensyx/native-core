@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.28;
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {EIP712, ECDSA} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
@@ -108,7 +110,7 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             uint256 boundaryValue =
                 quote.confidenceExtractedValueN == 0 ? quote.deadlineTimestamp : quote.confidenceExtractedValueN;
 
-            uint256 confidence = ((block.timestamp - quote.confidenceExtractedValueT) * 1e6)
+            uint256 confidence = ((Math.min(block.timestamp, boundaryValue) - quote.confidenceExtractedValueT) * 1e6)
                 / (boundaryValue - quote.confidenceExtractedValueT);
 
             uint256 amplifiedRatio = confidence ** quote.confidenceExtractedValueE;
@@ -117,7 +119,8 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             uint256 varianceMetric =
                 (amplifiedRatio * quote.confidenceExtractedValueM * 10_000) / (baseAmplifier * 10_000);
 
-            buyerTokenAmount = buyerTokenAmount * (10_000 - varianceMetric) / 10_000;
+            buyerTokenAmount =
+                buyerTokenAmount * (10_000 - Math.min(varianceMetric, quote.confidenceExtractedValueM)) / 10_000;
         }
 
         require(
