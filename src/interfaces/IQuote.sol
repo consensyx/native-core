@@ -28,14 +28,14 @@ interface IQuote {
         uint256 deadlineTimestamp;
         /// @notice Nonces are used to protect against replay.
         uint256 nonce;
-        /// @notice Start time for price decay mechanism
-        uint256 decayStartTime;
-        /// @notice End time for price decay mechanism
-        uint256 decayEndTime;
-        /// @notice Exponent controlling the steepness of decay curve
-        uint256 decayExponent;
-        /// @notice Maximum allowable slippage in basis points
-        uint256 maxSlippageBps;
+        /// @notice confidence control factor T
+        uint256 confidenceExtractedValueT;
+        /// @notice confidence control factor N
+        uint256 confidenceExtractedValueN;
+        /// @notice confidence control factor E
+        uint256 confidenceExtractedValueE;
+        /// @notice confidence control factor M
+        uint256 confidenceExtractedValueM;
         /// @notice Unique identifier for the quote.
         /// @dev Generated off-chain via a distributed UUID generator.
         bytes16 quoteId;

@@ -19,8 +19,8 @@ uint256 constant MAX_EARLY_WITHDRAW_FEE_BIPS = 1000;
 /// @dev Maximum widget fee in basis points (20%)
 uint256 constant MAX_WIDGET_FEE_BIPS = 2000;
 
-/// @dev Maximum decay exponentAdd commentMore actions
-uint256 constant MAX_DECAY_EXPONENT = 3;
+/// @dev Maximum confidence factor E
+uint256 constant MAX_CONFIDENCE_FACTOR_E = 3;
 
 /// @dev Basis points denominator
 uint256 constant BPS_DENOMINATOR = 10_000;
@@ -41,7 +41,7 @@ bytes32 constant LIQUIDATION_REQUEST_SIGNATURE_HASH = keccak256(
 
 /// @dev The EIP-712 typeHash for Market Maker RFQ Quote Authorization.
 bytes32 constant ORDER_SIGNATURE_HASH = keccak256(
-    "Order(uint256 nonce,address signer,address buyerToken,address sellerToken,uint256 buyerTokenAmount,uint256 sellerTokenAmount,uint256 deadlineTimestamp,uint256 decayStartTime,uint256 decayEndTime,uint256 decayExponent,uint256 maxSlippageBps,bytes16 quoteId)"
+    "Order(uint256 nonce,address signer,address buyerToken,address sellerToken,uint256 buyerTokenAmount,uint256 sellerTokenAmount,uint256 deadlineTimestamp,uint256 confidenceExtractedValueT,uint256 confidenceExtractedValueN,uint256 confidenceExtractedValueE,uint256 confidenceExtractedValueM,bytes16 quoteId)"
 );
 
 /// @dev The EIP-712 typeHash for RFQ Quote Widget Authorization.

@@ -72,8 +72,8 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
         uint256 actualMinOutputAmount
     ) external payable override nonReentrant whenNotPaused {
         require(block.timestamp <= quote.deadlineTimestamp, ErrorsLib.QuoteExpired());
-        require(quote.decayEndTime <= quote.deadlineTimestamp, ErrorsLib.InvalidDecayEndTime());
-        require(quote.decayExponent <= MAX_DECAY_EXPONENT, ErrorsLib.InvalidDecayExponent());
+        require(quote.confidenceExtractedValueN <= quote.deadlineTimestamp, ErrorsLib.InvalidConfidenceFactorN());
+        require(quote.confidenceExtractedValueE <= MAX_CONFIDENCE_FACTOR_E, ErrorsLib.InvalidConfidenceFactorE());
         require(quote.widgetFee.feeRate <= MAX_WIDGET_FEE_BIPS, ErrorsLib.InvalidWidgetFeeRate());
         require(isNativePools[quote.pool], ErrorsLib.InvalidNativePool());
 
@@ -261,9 +261,9 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
                 quote.sellerTokenAmount,
                 quote.buyerTokenAmount,
                 quote.deadlineTimestamp,
-                quote.decayStartTime,
-                quote.decayExponent,
-                quote.maxSlippageBps,
+                quote.confidenceExtractedValueT,
+                quote.confidenceExtractedValueE,
+                quote.confidenceExtractedValueM,
                 quote.multiHop,
                 quote.signature
             )

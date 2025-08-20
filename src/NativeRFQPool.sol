@@ -104,25 +104,20 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
             ? (effectiveSellerTokenAmount * quote.buyerTokenAmount) / quote.sellerTokenAmount
             : quote.buyerTokenAmount;
 
-        // Only calculate time decay slippage if decayExponent > 0
-        if (quote.decayExponent > 0 && block.timestamp > quote.decayStartTime) {
-            // Determine the effective end time for decay calculation
-            uint256 effectiveDecayEndTime = quote.decayEndTime == 0 ? quote.deadlineTimestamp : quote.decayEndTime;
+        if (quote.confidenceExtractedValueE > 0 && block.timestamp > quote.confidenceExtractedValueT) {
+            uint256 boundaryValue =
+                quote.confidenceExtractedValueN == 0 ? quote.deadlineTimestamp : quote.confidenceExtractedValueN;
 
-            // Calculate time ratio with 1e6 precision: preserves accuracy while preventing overflow risk with exponentiation
-            uint256 timeRatio =
-                ((block.timestamp - quote.decayStartTime) * 1e6) / (effectiveDecayEndTime - quote.decayStartTime);
+            uint256 confidence = ((block.timestamp - quote.confidenceExtractedValueT) * 1e6)
+                / (boundaryValue - quote.confidenceExtractedValueT);
 
-            // Apply exponential decay curve: timeRatio^decayExponent
-            uint256 ratioPowered = timeRatio ** quote.decayExponent;
-            uint256 scalePowered = 1e6 ** quote.decayExponent;
+            uint256 amplifiedRatio = confidence ** quote.confidenceExtractedValueE;
+            uint256 baseAmplifier = 1e6 ** quote.confidenceExtractedValueE;
 
-            // Calculate final slippage in basis points
-            uint256 slippageBps =
-                (ratioPowered * quote.maxSlippageBps * BPS_DENOMINATOR) / (scalePowered * BPS_DENOMINATOR);
+            uint256 varianceMetric =
+                (amplifiedRatio * quote.confidenceExtractedValueM * 10_000) / (baseAmplifier * 10_000);
 
-            // Apply time decay slippage to reduce buyer token amount
-            buyerTokenAmount = buyerTokenAmount * (BPS_DENOMINATOR - slippageBps) / BPS_DENOMINATOR;
+            buyerTokenAmount = buyerTokenAmount * (10_000 - varianceMetric) / 10_000;
         }
 
         require(
@@ -225,10 +220,10 @@ contract NativeRFQPool is INativeRFQPool, Ownable2Step, EIP712 {
                     quote.buyerTokenAmount,
                     quote.sellerTokenAmount,
                     quote.deadlineTimestamp,
-                    quote.decayStartTime,
-                    quote.decayEndTime,
-                    quote.decayExponent,
-                    quote.maxSlippageBps,
+                    quote.confidenceExtractedValueT,
+                    quote.confidenceExtractedValueN,
+                    quote.confidenceExtractedValueE,
+                    quote.confidenceExtractedValueM,
                     quote.quoteId
                 )
             )

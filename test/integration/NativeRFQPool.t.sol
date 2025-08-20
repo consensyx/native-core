@@ -237,12 +237,10 @@ contract NativeRFQPoolTest is BaseTest {
                 buyerTokenAmount: params.expectedAmount,
                 amountOutMinimum: params.expectedAmount,
                 deadlineTimestamp: block.timestamp + 1 hours,
-                // decay mechanism
-                decayStartTime: block.timestamp,
-                decayEndTime: block.timestamp + 1 hours,
-                decayExponent: 0,
-                maxSlippageBps: 0,
-                // end decay mechanism
+                confidenceExtractedValueT: block.timestamp,
+                confidenceExtractedValueN: block.timestamp + 1 hours,
+                confidenceExtractedValueE: 0,
+                confidenceExtractedValueM: 0,
                 nonce: 0,
                 multiHop: false,
                 signature: bytes(""),

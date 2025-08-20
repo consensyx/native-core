@@ -35,11 +35,11 @@ library ErrorsLib {
     /// @notice Thrown when an amount parameter is invalid
     error InvalidAmount();
 
-    /// @notice Thrown when decay end time is invalid
-    error InvalidDecayEndTime();
+    /// @notice Thrown when confidence factor E is invalid
+    error InvalidConfidenceFactorE();
 
-    /// @notice Thrown when decay exponent is invalid
-    error InvalidDecayExponent();
+    /// @notice Thrown when confidence factor N is invalid
+    error InvalidConfidenceFactorN();
 
     /// @notice Thrown when fee rate in basis points exceeds maximum (10000)
     error InvalidFeeBips();

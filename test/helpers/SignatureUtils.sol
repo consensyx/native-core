@@ -6,8 +6,8 @@ import "../../src/interfaces/ICreditVault.sol";
 
 library SignatureUtils {
     function generateQuoteSignature(IQuote.RFQTQuote memory quote) internal view returns (bytes32) {
-        // keccak256("Order(uint256 nonce,address signer,address buyerToken,address sellerToken,uint256 buyerTokenAmount,uint256 sellerTokenAmount,uint256 deadlineTimestamp,uint256 decayStartTime,uint256 decayEndTime,uint256 decayExponent,uint256 maxSlippageBps,bytes16 quoteId)");
-        bytes32 ORDER_SIGNATURE_HASH = 0x4565bd20a17f238b49f99e4a1b2efa1e0c58f85e5c81d4f4a8957f3b991c4f8a;
+        // keccak256("Order(uint256 nonce,address signer,address buyerToken,address sellerToken,uint256 buyerTokenAmount,uint256 sellerTokenAmount,uint256 deadlineTimestamp,uint256 confidenceExtractedValueT,uint256 confidenceExtractedValueN,uint256 confidenceExtractedValueE,uint256 confidenceExtractedValueM,bytes16 quoteId)");
+        bytes32 ORDER_SIGNATURE_HASH = 0x24db30db0c6378384fabc7896423fdb0caf09704c05de8b8fc17a4cb85171fe5;
 
         bytes32 quoteStructHash = keccak256(
             abi.encode(
@@ -19,10 +19,10 @@ library SignatureUtils {
                 quote.buyerTokenAmount,
                 quote.sellerTokenAmount,
                 quote.deadlineTimestamp,
-                quote.decayStartTime,
-                quote.decayEndTime,
-                quote.decayExponent,
-                quote.maxSlippageBps,
+                quote.confidenceExtractedValueT,
+                quote.confidenceExtractedValueN,
+                quote.confidenceExtractedValueE,
+                quote.confidenceExtractedValueM,
                 quote.quoteId
             )
         );
@@ -58,9 +58,9 @@ library SignatureUtils {
                 quote.sellerTokenAmount,
                 quote.buyerTokenAmount,
                 quote.deadlineTimestamp,
-                quote.decayStartTime,
-                quote.decayExponent,
-                quote.maxSlippageBps,
+                quote.confidenceExtractedValueT,
+                quote.confidenceExtractedValueE,
+                quote.confidenceExtractedValueM,
                 quote.multiHop,
                 quote.signature
             )
