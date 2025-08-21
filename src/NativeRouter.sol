@@ -101,6 +101,9 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
 
         if (actualMinOutputAmount > 0) {
             quote.amountOutMinimum = actualMinOutputAmount;
+        } else if (actualSellerAmount > 0 && quote.amountOutMinimum > 0) {
+            // Proportionally adjust amountOutMinimum when actualSellerAmount is provided but actualMinOutputAmount is not
+            quote.amountOutMinimum = (quote.amountOutMinimum * effectiveSellerTokenAmount) / quote.sellerTokenAmount;
         }
 
         // charge widget fee based on the actual amount
