@@ -2,7 +2,6 @@
 pragma solidity 0.8.28;
 
 import {IQuote} from "./IQuote.sol";
-import {ISignatureTransfer} from "@permit2/interfaces/ISignatureTransfer.sol";
 
 /// @title Native Router Interface
 interface INativeRouter is IQuote {
