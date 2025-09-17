@@ -244,7 +244,7 @@ contract NativeRouterTest is BaseTest {
         assertEq(weth.balanceOf(halo), effectiveSellerAmount, "Pool treasury WETH balance incorrect");
     }
 
-    function test_tradeRFQMultiHopWithWidgetFeeOnlyFirstHop() public {
+    function test_tradeRFQMultiHop_Multicall() public {
         setupPMM();
 
         // Setup
@@ -260,8 +260,48 @@ contract NativeRouterTest is BaseTest {
         wbtc.approve(address(haloRFQPool), type(uint256).max);
         vm.stopPrank();
 
-        // Store initial balances and setup amounts
         _executeMultiHopTest();
+    }
+
+    function test_tradeRFQMultiHop_Multicall_WithNativeETH() public {
+        setupPMM();
+
+        // Setup - Give Alice native ETH instead of WETH
+        vm.deal(alice, 10 ether);
+
+        vm.startPrank(deployer);
+        USDC.mint(halo, 1_000_000 * 10 ** 6);
+        wbtc.mint(halo, 100 * 10 ** 8);
+        vm.stopPrank();
+
+        vm.startPrank(halo);
+        USDC.approve(address(haloRFQPool), type(uint256).max);
+        wbtc.approve(address(haloRFQPool), type(uint256).max);
+        vm.stopPrank();
+
+        _executeMultiHopTestWithNativeETH();
+    }
+
+    function test_tradeRFQT_MulticallUnwrapBuyerTokenToETH() public {
+        setupPMM();
+
+        // Setup - Give Alice USDC to trade for WETH
+        uint256 usdcAmount = 3000 * 10 ** 6; // 3000 USDC
+        deal(address(USDC), alice, usdcAmount);
+
+        // Setup halo with WETH for the trade
+        vm.startPrank(deployer);
+        deal(address(weth), halo, 10 ether);
+        vm.stopPrank();
+
+        vm.startPrank(halo);
+        weth.approve(address(haloRFQPool), type(uint256).max);
+        vm.stopPrank();
+
+        // Give WETH9 contract some ETH balance for withdrawals
+        vm.deal(address(weth), 2 ether);
+
+        _executeBuyerTokenUnwrapToETHTest(usdcAmount);
     }
 
     function test_measureGasUsageWithConfidenceExtractedValue() public {
@@ -349,43 +389,6 @@ contract NativeRouterTest is BaseTest {
         console.log("========================================");
     }
 
-    function _executeMultiHopTest() internal {
-        uint256 wethAmount = 1 ether;
-        uint256 widgetFeeRate = 100; // 1%
-        uint256 expectedWidgetFee = wethAmount * widgetFeeRate / 10_000;
-        uint256 effectiveWethAmount = wethAmount - expectedWidgetFee;
-
-        // Calculate swap amounts: 1 WETH = 3000 USDC, 1 WBTC = 90000 USDC
-        uint256 usdcFromWeth = 3000 * 10 ** 6; // 3000 USDC
-        uint256 effectiveUsdcAmount = (effectiveWethAmount * usdcFromWeth) / wethAmount;
-        uint256 wbtcFromUsdc = effectiveUsdcAmount * 10 ** 8 / (90_000 * 10 ** 6);
-
-        // Store balances
-        uint256 aliceInitialWeth = weth.balanceOf(alice);
-        uint256 aliceInitialWbtc = wbtc.balanceOf(alice);
-        uint256 deployerInitialWeth = weth.balanceOf(deployer);
-
-        // Create and execute first hop
-        IQuote.RFQTQuote memory firstHop = _createFirstHopQuote(wethAmount, usdcFromWeth, widgetFeeRate);
-
-        // Create and execute second hop
-        IQuote.RFQTQuote memory secondHop = _createSecondHopQuote(effectiveUsdcAmount, wbtcFromUsdc);
-
-        vm.startPrank(alice);
-        weth.approve(address(router), wethAmount);
-        router.tradeRFQT(firstHop, 0, 0);
-        router.tradeRFQT(secondHop, 0, 0);
-        vm.stopPrank();
-
-        // Verify results
-        assertEq(weth.balanceOf(alice), aliceInitialWeth - wethAmount, "Alice WETH balance incorrect");
-        assertEq(wbtc.balanceOf(alice), aliceInitialWbtc + wbtcFromUsdc, "Alice WBTC balance incorrect");
-        assertEq(
-            weth.balanceOf(deployer), deployerInitialWeth + expectedWidgetFee, "Widget fee only charged on first hop"
-        );
-        assertEq(USDC.balanceOf(address(router)), 0, "No USDC left in router");
-    }
-
     // Struct to hold hop quote parameters
     struct HopQuoteParams {
         address recipient;
@@ -437,9 +440,14 @@ contract NativeRouterTest is BaseTest {
             });
         }
 
-        // Block 2: Generate quote signature
+        // Block 2: Generate quote signature with proper ETH handling
         {
-            bytes32 quoteDigest = SignatureUtils.generateQuoteSignature(quote);
+            // For signature generation, convert address(0) to WETH address like NativeRFQPool does
+            IQuote.RFQTQuote memory quoteForSig = quote;
+            quoteForSig.sellerToken = quote.sellerToken == address(0) ? address(weth) : quote.sellerToken;
+            quoteForSig.buyerToken = quote.buyerToken == address(0) ? address(weth) : quote.buyerToken;
+
+            bytes32 quoteDigest = SignatureUtils.generateQuoteSignature(quoteForSig);
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(haloKey, quoteDigest);
             quote.signature = abi.encodePacked(r, s, v);
         }
@@ -703,6 +711,281 @@ contract NativeRouterTest is BaseTest {
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, widgetFeeDigest);
             quote.widgetFeeSignature = abi.encodePacked(r, s, v);
         }
+
+        return quote;
+    }
+
+    struct MultiHopParams {
+        uint256 wethAmount;
+        uint256 widgetFeeRate;
+        uint256 expectedWidgetFee;
+        uint256 effectiveWethAmount;
+        uint256 usdcFromWeth;
+        uint256 effectiveUsdcAmount;
+        uint256 wbtcFromUsdc;
+    }
+
+    function _executeMultiHopTest() internal {
+        // Use struct to avoid stack too deep
+        MultiHopParams memory params;
+
+        params.wethAmount = 1 ether;
+        params.widgetFeeRate = 100; // 1%
+        params.expectedWidgetFee = params.wethAmount * params.widgetFeeRate / 10_000;
+        params.effectiveWethAmount = params.wethAmount - params.expectedWidgetFee;
+
+        // Calculate swap amounts: 1 WETH = 3000 USDC, 1 WBTC = 90000 USDC
+        params.usdcFromWeth = 3000 * 10 ** 6; // 3000 USDC
+        params.effectiveUsdcAmount = (params.effectiveWethAmount * params.usdcFromWeth) / params.wethAmount;
+        params.wbtcFromUsdc = params.effectiveUsdcAmount * 10 ** 8 / (90_000 * 10 ** 6);
+
+        // Store initial balances
+        uint256[3] memory initialBalances = [weth.balanceOf(alice), wbtc.balanceOf(alice), weth.balanceOf(deployer)];
+
+        // Execute atomic multicall
+        _executeAtomicMultiHop(params);
+
+        // Verify results
+        assertEq(weth.balanceOf(alice), initialBalances[0] - params.wethAmount, "Alice WETH balance incorrect");
+        assertEq(wbtc.balanceOf(alice), initialBalances[1] + params.wbtcFromUsdc, "Alice WBTC balance incorrect");
+        assertEq(
+            weth.balanceOf(deployer),
+            initialBalances[2] + params.expectedWidgetFee,
+            "Widget fee only charged on first hop"
+        );
+        assertEq(USDC.balanceOf(address(router)), 0, "No USDC left in router");
+    }
+
+    function _executeMultiHopTestWithNativeETH() internal {
+        // Use struct to avoid stack too deep
+        MultiHopParams memory params;
+
+        params.wethAmount = 1 ether;
+        params.widgetFeeRate = 100; // 1%
+        params.expectedWidgetFee = params.wethAmount * params.widgetFeeRate / 10_000;
+        params.effectiveWethAmount = params.wethAmount - params.expectedWidgetFee;
+
+        // Calculate swap amounts: 1 ETH = 3000 USDC, 1 WBTC = 90000 USDC
+        params.usdcFromWeth = 3000 * 10 ** 6; // 3000 USDC
+        params.effectiveUsdcAmount = (params.effectiveWethAmount * params.usdcFromWeth) / params.wethAmount;
+        params.wbtcFromUsdc = params.effectiveUsdcAmount * 10 ** 8 / (90_000 * 10 ** 6);
+
+        // Store initial balances (using alice.balance for ETH)
+        uint256[3] memory initialBalances = [alice.balance, wbtc.balanceOf(alice), weth.balanceOf(deployer)];
+
+        // Execute atomic multicall with native ETH
+        _executeAtomicMultiHopWithNativeETH(params);
+
+        // Verify results - Alice's ETH balance should decrease
+        assertEq(alice.balance, initialBalances[0] - params.wethAmount, "Alice ETH balance incorrect");
+        assertEq(wbtc.balanceOf(alice), initialBalances[1] + params.wbtcFromUsdc, "Alice WBTC balance incorrect");
+        assertEq(
+            weth.balanceOf(deployer),
+            initialBalances[2] + params.expectedWidgetFee,
+            "Widget fee only charged on first hop"
+        );
+        assertEq(USDC.balanceOf(address(router)), 0, "No USDC left in router");
+    }
+
+    function _executeAtomicMultiHop(MultiHopParams memory params) internal {
+        // Create quotes
+        IQuote.RFQTQuote memory firstHop =
+            _createFirstHopQuote(params.wethAmount, params.usdcFromWeth, params.widgetFeeRate);
+        IQuote.RFQTQuote memory secondHop = _createSecondHopQuote(params.effectiveUsdcAmount, params.wbtcFromUsdc);
+
+        // Prepare multicall data to avoid stack depth issues
+        bytes[] memory multicallData = new bytes[](2);
+        multicallData[0] = abi.encodeCall(router.tradeRFQT, (firstHop, 0, 0));
+        multicallData[1] = abi.encodeCall(router.tradeRFQT, (secondHop, 0, 0));
+
+        // Execute both trades atomically via multicall
+        vm.startPrank(alice);
+        weth.approve(address(router), params.wethAmount);
+        router.multicall(multicallData);
+        vm.stopPrank();
+    }
+
+    function _executeAtomicMultiHopWithNativeETH(MultiHopParams memory params) internal {
+        // Create quotes - first hop uses native ETH (address(0) as sellerToken)
+        IQuote.RFQTQuote memory firstHop =
+            _createFirstHopQuoteWithNativeETH(params.wethAmount, params.usdcFromWeth, params.widgetFeeRate);
+        IQuote.RFQTQuote memory secondHop = _createSecondHopQuote(params.effectiveUsdcAmount, params.wbtcFromUsdc);
+
+        // Prepare multicall data to avoid stack depth issues
+        bytes[] memory multicallData = new bytes[](2);
+        multicallData[0] = abi.encodeCall(router.tradeRFQT, (firstHop, 0, 0));
+        multicallData[1] = abi.encodeCall(router.tradeRFQT, (secondHop, 0, 0));
+
+        // Execute both trades atomically via multicall with ETH value
+        vm.startPrank(alice);
+        // No WETH approval needed, sending ETH directly
+        router.multicall{value: params.wethAmount}(multicallData);
+        vm.stopPrank();
+    }
+
+    function _createFirstHopQuoteWithNativeETH(
+        uint256 ethAmount,
+        uint256 usdcAmount,
+        uint256 widgetFeeRate
+    ) internal view returns (IQuote.RFQTQuote memory) {
+        // Create quote for signature generation using WETH address
+        IQuote.RFQTQuote memory quoteForSig;
+        bytes32 quoteDigest;
+
+        // Calculate effective amount after widget fee
+        uint256 effectiveSellerAmount = ethAmount - (ethAmount * widgetFeeRate / 10_000);
+        uint256 effectiveUsdcAmount = (effectiveSellerAmount * usdcAmount) / ethAmount;
+
+        {
+            quoteForSig = IQuote.RFQTQuote({
+                pool: address(haloRFQPool),
+                signer: halo,
+                recipient: address(router),
+                sellerToken: address(weth), // Use WETH for signature
+                buyerToken: address(USDC),
+                sellerTokenAmount: ethAmount,
+                buyerTokenAmount: usdcAmount,
+                deadlineTimestamp: block.timestamp + 1 hours,
+                nonce: 0,
+                confidenceExtractedValueT: 0,
+                confidenceExtractedValueN: block.timestamp + 1 hours,
+                confidenceExtractedValueE: 0,
+                confidenceExtractedValueM: 0,
+                quoteId: bytes16(uint128(1)),
+                multiHop: false,
+                signature: bytes(""),
+                widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: widgetFeeRate}),
+                widgetFeeSignature: bytes(""),
+                amountOutMinimum: usdcAmount
+            });
+
+            // Generate quote signature using WETH address
+            quoteDigest = SignatureUtils.generateQuoteSignature(quoteForSig);
+        }
+
+        // Generate signatures and create final quote
+        {
+            (uint8 v, bytes32 r, bytes32 s) = vm.sign(haloKey, quoteDigest);
+            bytes memory quoteSignature = abi.encodePacked(r, s, v);
+
+            // Now create the actual quote with address(0) for native ETH
+            IQuote.RFQTQuote memory quote = IQuote.RFQTQuote({
+                pool: address(haloRFQPool),
+                signer: halo,
+                recipient: address(router),
+                sellerToken: address(0), // Native ETH for router
+                buyerToken: address(USDC),
+                sellerTokenAmount: ethAmount,
+                buyerTokenAmount: usdcAmount,
+                deadlineTimestamp: block.timestamp + 1 hours,
+                nonce: 0,
+                confidenceExtractedValueT: 0,
+                confidenceExtractedValueN: block.timestamp + 1 hours,
+                confidenceExtractedValueE: 0,
+                confidenceExtractedValueM: 0,
+                quoteId: bytes16(uint128(1)),
+                multiHop: false,
+                signature: quoteSignature, // Use signature generated with WETH
+                widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: widgetFeeRate}),
+                widgetFeeSignature: bytes(""),
+                amountOutMinimum: effectiveUsdcAmount
+            });
+
+            // Generate widget fee signature
+            bytes32 widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, address(router));
+            (v, r, s) = vm.sign(deployerKey, widgetFeeDigest);
+            quote.widgetFeeSignature = abi.encodePacked(r, s, v);
+
+            return quote;
+        }
+    }
+
+    function _executeBuyerTokenUnwrapToETHTest(uint256 usdcAmount) internal {
+        // Calculate expected amounts
+        uint256 expectedWethAmount = 1 ether; // 1 WETH for 3000 USDC (price: 3000 USDC/ETH)
+        uint256 widgetFeeRate = 50; // 0.5%
+
+        // Widget fee is charged on USDC (seller token), not WETH (buyer token)
+        uint256 expectedUsdcWidgetFee = usdcAmount * widgetFeeRate / 10_000;
+        uint256 effectiveUsdcAmount = usdcAmount - expectedUsdcWidgetFee;
+
+        // WETH amount is proportionally reduced based on effective USDC
+        uint256 effectiveWethAmount = (effectiveUsdcAmount * expectedWethAmount) / usdcAmount;
+
+        // Store initial balances
+        uint256 aliceInitialUsdc = USDC.balanceOf(alice);
+        uint256 aliceInitialEth = alice.balance;
+        uint256 deployerInitialUsdc = USDC.balanceOf(deployer); // Widget fee recipient for USDC
+
+        // Create quote for USDC → WETH trade
+        IQuote.RFQTQuote memory quote = _createUSDCToWETHQuote(usdcAmount, expectedWethAmount, widgetFeeRate);
+
+        // Prepare multicall data
+        bytes[] memory multicallData = new bytes[](2);
+
+        // First call: Trade USDC for WETH (WETH goes to router)
+        multicallData[0] = abi.encodeCall(router.tradeRFQT, (quote, 0, 0));
+
+        // Second call: Unwrap WETH to ETH (ETH goes to alice)
+        multicallData[1] = abi.encodeCall(router.unwrapWETH9, (alice));
+
+        // Execute both operations atomically
+        vm.startPrank(alice);
+        USDC.approve(address(router), usdcAmount);
+        router.multicall(multicallData);
+        vm.stopPrank();
+
+        // Verify results
+        assertEq(USDC.balanceOf(alice), aliceInitialUsdc - usdcAmount, "Alice USDC balance incorrect");
+        assertEq(alice.balance, aliceInitialEth + effectiveWethAmount, "Alice ETH balance incorrect");
+        assertEq(
+            USDC.balanceOf(deployer),
+            deployerInitialUsdc + expectedUsdcWidgetFee,
+            "Widget fee recipient USDC balance incorrect"
+        );
+        assertEq(weth.balanceOf(address(router)), 0, "No WETH left in router");
+        assertEq(address(router).balance, 0, "No ETH left in router");
+    }
+
+    function _createUSDCToWETHQuote(
+        uint256 usdcAmount,
+        uint256 wethAmount,
+        uint256 widgetFeeRate
+    ) internal view returns (IQuote.RFQTQuote memory) {
+        // Calculate effective amount after widget fee
+        uint256 effectiveWethAmount = wethAmount - (wethAmount * widgetFeeRate / 10_000);
+
+        IQuote.RFQTQuote memory quote = IQuote.RFQTQuote({
+            pool: address(haloRFQPool),
+            signer: halo,
+            recipient: address(router), // WETH goes to router for unwrapping
+            sellerToken: address(USDC),
+            buyerToken: address(weth),
+            sellerTokenAmount: usdcAmount,
+            buyerTokenAmount: wethAmount,
+            deadlineTimestamp: block.timestamp + 1 hours,
+            nonce: 0,
+            confidenceExtractedValueT: 0,
+            confidenceExtractedValueN: block.timestamp + 1 hours,
+            confidenceExtractedValueE: 0,
+            confidenceExtractedValueM: 0,
+            quoteId: bytes16(uint128(1)),
+            multiHop: false,
+            signature: bytes(""),
+            widgetFee: IQuote.WidgetFee({feeRecipient: deployer, feeRate: widgetFeeRate}),
+            widgetFeeSignature: bytes(""),
+            amountOutMinimum: effectiveWethAmount
+        });
+
+        // Generate quote signature
+        bytes32 quoteDigest = SignatureUtils.generateQuoteSignature(quote);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(haloKey, quoteDigest);
+        quote.signature = abi.encodePacked(r, s, v);
+
+        // Generate widget fee signature
+        bytes32 widgetFeeDigest = SignatureUtils.generateWidgetFeeSignature(quote, address(router));
+        (v, r, s) = vm.sign(deployerKey, widgetFeeDigest);
+        quote.widgetFeeSignature = abi.encodePacked(r, s, v);
 
         return quote;
     }
