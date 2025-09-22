@@ -47,3 +47,7 @@ bytes32 constant ORDER_SIGNATURE_HASH = keccak256(
 /// @dev The EIP-712 typeHash for RFQ Quote Widget Authorization.
 bytes32 constant RFQ_QUOTE_WIDGET_SIGNATURE_HASH =
     keccak256("RFQTQuote(bytes32 quote,address widgetFeeRecipient,uint256 widgetFeeRate)");
+
+/// @dev The EIP-712 typeHash for External Swap Authorization.
+bytes32 constant EXTERNAL_SWAP_SIGNATURE_HASH =
+    keccak256("ExternalSwap(address target,bytes callData,uint256 minReturnAmount)");

@@ -389,6 +389,45 @@ contract NativeRouterTest is BaseTest {
         console.log("========================================");
     }
 
+    function test_externalSwap_Success() public {
+        setupPMM();
+
+        // Setup mock external contract address
+        address mockExternalContract = makeAddr("mockExternalContract");
+
+        // Setup test parameters
+        uint256 returnAmount = 1000 * 10 ** 6; // 1000 USDC returned by external contract
+        uint256 minReturnAmount = 900 * 10 ** 6; // 900 USDC minimum expected
+
+        // Use a simple mock function for testing purposes
+        bytes memory callData = abi.encodeWithSignature(
+            "mockSwapFunction(uint256)",
+            1 ether // amountIn
+        );
+
+        // Add mock contract to whitelist
+        vm.prank(deployer);
+        router.setExternalSwapSource(mockExternalContract, true);
+
+        // Mock the external contract call to return the expected amount
+        vm.mockCall(mockExternalContract, callData, abi.encode(returnAmount));
+
+        // Generate signature for external swap
+        bytes32 digest = SignatureUtils.generateExternalSwapSignature(
+            mockExternalContract, callData, minReturnAmount, address(router)
+        );
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // Execute external swap
+        vm.prank(alice);
+        router.externalSwap(mockExternalContract, callData, signature, minReturnAmount);
+
+        // Cleanup
+        vm.clearMockedCalls();
+    }
+
     // Struct to hold hop quote parameters
     struct HopQuoteParams {
         address recipient;

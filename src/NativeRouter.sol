@@ -37,6 +37,9 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
     /// @dev Address of signer authorized to sign tradeRFQT signatures
     mapping(address => bool) public signers;
 
+    /// @notice Mapping of all trusted external swap sources (pools, routers)
+    mapping(address => bool) public externalSwapSources;
+
     /*//////////////////////////////////////////////////////////////////////////
                                      RECEIVE FUNCTION
     //////////////////////////////////////////////////////////////////////////*/
@@ -118,6 +121,32 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
         NativeRFQPool(payable(quote.pool)).tradeRFQT(effectiveSellerTokenAmount, quote);
     }
 
+    /// @notice Execute an external swap with signed authorization
+    /// @param target The address of the external swap contract to call
+    /// @param callData The call data to execute on the target contract
+    /// @param signature The authorization signature from a trusted signer
+    /// @param minReturnAmount The minimum amount of tokens expected to be returned
+    function externalSwap(
+        address target,
+        bytes calldata callData,
+        bytes calldata signature,
+        uint256 minReturnAmount
+    ) external payable override nonReentrant whenNotPaused {
+        require(externalSwapSources[target], ErrorsLib.InvalidExternalSwapSource());
+
+        _verifyExternalSwap(target, callData, signature, minReturnAmount);
+
+        // Execute the external swap call and capture return data
+        (bool success, bytes memory returnData) = target.call{value: msg.value}(callData);
+        require(success, ErrorsLib.ExternalSwapFailed());
+
+        // Parse and validate return amount inline
+        uint256 returnAmount = abi.decode(returnData, (uint256));
+        require(returnAmount >= minReturnAmount, ErrorsLib.NotEnoughAmountOut(returnAmount, minReturnAmount));
+
+        emit ExternalSwap(target, callData);
+    }
+
     /// @notice Unwraps WETH9 to ETH by unwrapping all WETH currently in this contract
     /// @dev SECURITY CONSIDERATION: This function is permissionless and will unwrap ALL WETH in the contract
     /// @dev Must be called immediately after receiving WETH in the same multicall transaction
@@ -188,6 +217,17 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
         isNativePools[pool] = isActive;
 
         emit NativePoolUpdated(pool, isActive);
+    }
+
+    /// @notice Updates external swap source whitelist status
+    /// @param source The address of the external swap source
+    /// @param isActive true to whitelist, false to remove from whitelist
+    function setExternalSwapSource(address source, bool isActive) external onlyOwner {
+        require(source != address(0), ErrorsLib.ZeroAddress());
+
+        externalSwapSources[source] = isActive;
+
+        emit ExternalSwapSourceUpdated(source, isActive);
     }
 
     /// @notice Pauses all RFQ and fillOrder operations
@@ -281,6 +321,20 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
         );
 
         address recoveredSigner = ECDSA.recover(digest, quote.widgetFeeSignature);
+
+        require(signers[recoveredSigner], ErrorsLib.InvalidSignature());
+    }
+
+    function _verifyExternalSwap(
+        address target,
+        bytes calldata callData,
+        bytes calldata signature,
+        uint256 minReturnAmount
+    ) internal view {
+        bytes32 digest =
+            _hashTypedDataV4(keccak256(abi.encode(EXTERNAL_SWAP_SIGNATURE_HASH, target, callData, minReturnAmount)));
+
+        address recoveredSigner = ECDSA.recover(digest, signature);
 
         require(signers[recoveredSigner], ErrorsLib.InvalidSignature());
     }

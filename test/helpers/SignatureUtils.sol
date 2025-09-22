@@ -47,6 +47,20 @@ library SignatureUtils {
         return _hashTypedDataV4(widgetFeeStructHash, routerAddress, "Native Router", "1");
     }
 
+    function generateExternalSwapSignature(
+        address target,
+        bytes memory callData,
+        uint256 minReturnAmount,
+        address routerAddress
+    ) internal view returns (bytes32) {
+        bytes32 EXTERNAL_SWAP_SIGNATURE_HASH =
+            keccak256("ExternalSwap(address target,bytes callData,uint256 minReturnAmount)");
+
+        bytes32 structHash = keccak256(abi.encode(EXTERNAL_SWAP_SIGNATURE_HASH, target, callData, minReturnAmount));
+
+        return _hashTypedDataV4(structHash, routerAddress, "Native Router", "1");
+    }
+
     function _generateQuoteHash(IQuote.RFQTQuote memory quote) internal pure returns (bytes32) {
         // This matches the exact logic in NativeRouter._verifyRFQSignature
         return keccak256(

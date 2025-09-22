@@ -59,6 +59,12 @@ library ErrorsLib {
     /// @notice Thrown when the pool address is invalid Native pool
     error InvalidNativePool();
 
+    /// @notice Thrown when the external swap source is not whitelisted
+    error InvalidExternalSwapSource();
+
+    /// @notice Thrown when external swap call fails
+    error ExternalSwapFailed();
+
     /// @notice Thrown when signature verification fails
     error InvalidSignature();
 

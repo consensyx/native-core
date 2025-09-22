@@ -15,6 +15,14 @@ interface INativeRouter is IQuote {
         uint256 actualMinOutputAmount
     ) external payable;
 
+    /// @notice Execute an external swap with signed authorization
+    function externalSwap(
+        address target,
+        bytes calldata callData,
+        bytes calldata signature,
+        uint256 minReturnAmount
+    ) external payable;
+
     /// @notice Emitted when ETH is refunded
     event RefundETH(address recipient, uint256 amount);
 
@@ -25,8 +33,6 @@ interface INativeRouter is IQuote {
     event SignerUpdated(address signer, bool isSigner);
 
     /// @notice Emitted when a native pool's status is updated
-    /// @param pool The address of the native pool
-    /// @param isActive The new status of the pool
     event NativePoolUpdated(address indexed pool, bool isActive);
 
     /// @notice Emitted when RFQ trade widget fee is transferred
@@ -36,4 +42,10 @@ interface INativeRouter is IQuote {
 
     /// @notice Emitted when WETH9 is unwrapped
     event UnwrapWETH9(address indexed recipient, uint256 amount);
+
+    /// @notice Emitted when an external swap is executed
+    event ExternalSwap(address indexed target, bytes callData);
+
+    /// @notice Emitted when an external swap source's status is updated
+    event ExternalSwapSourceUpdated(address indexed source, bool isActive);
 }
