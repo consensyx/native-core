@@ -49,14 +49,22 @@ library SignatureUtils {
 
     function generateExternalSwapSignature(
         address target,
+        address fromToken,
+        address spender,
+        uint256 fromTokenAmount,
         bytes memory callData,
         uint256 minReturnAmount,
         address routerAddress
     ) internal view returns (bytes32) {
-        bytes32 EXTERNAL_SWAP_SIGNATURE_HASH =
-            keccak256("ExternalSwap(address target,bytes callData,uint256 minReturnAmount)");
+        bytes32 EXTERNAL_SWAP_SIGNATURE_HASH = keccak256(
+            "ExternalSwap(address target,address fromToken,address spender,uint256 fromTokenAmount,uint256 minReturnAmount,bytes callData)"
+        );
 
-        bytes32 structHash = keccak256(abi.encode(EXTERNAL_SWAP_SIGNATURE_HASH, target, callData, minReturnAmount));
+        bytes32 structHash = keccak256(
+            abi.encode(
+                EXTERNAL_SWAP_SIGNATURE_HASH, target, fromToken, spender, fromTokenAmount, minReturnAmount, callData
+            )
+        );
 
         return _hashTypedDataV4(structHash, routerAddress, "Native Router", "1");
     }

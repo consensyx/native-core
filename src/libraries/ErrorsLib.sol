@@ -17,6 +17,9 @@ library ErrorsLib {
     /// @notice Thrown when LP token exchange rate increases more than allowed
     error ExchangeRateIncreaseTooMuch();
 
+    /// @notice Thrown when external call fails
+    error ExternalCallFailed();
+
     /// @notice Thrown when feature is paused
     error FeaturePaused();
 
@@ -61,9 +64,6 @@ library ErrorsLib {
 
     /// @notice Thrown when the external swap source is not whitelisted
     error InvalidExternalSwapSource();
-
-    /// @notice Thrown when external swap call fails
-    error ExternalSwapFailed();
 
     /// @notice Thrown when signature verification fails
     error InvalidSignature();

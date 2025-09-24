@@ -414,15 +414,37 @@ contract NativeRouterTest is BaseTest {
 
         // Generate signature for external swap
         bytes32 digest = SignatureUtils.generateExternalSwapSignature(
-            mockExternalContract, callData, minReturnAmount, address(router)
+            mockExternalContract,
+            address(weth),
+            mockExternalContract,
+            1 ether,
+            callData,
+            minReturnAmount,
+            address(router)
         );
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
         bytes memory signature = abi.encodePacked(r, s, v);
 
+        // Create external swap parameters
+        IQuote.ExternalSwap memory params = IQuote.ExternalSwap({
+            target: mockExternalContract,
+            fromToken: address(weth),
+            spender: mockExternalContract, // In this test, we'll use the same address for simplicity
+            fromTokenAmount: 1 ether,
+            minReturnAmount: minReturnAmount,
+            callData: callData,
+            signature: signature
+        });
+
+        // Give Alice some WETH and approve router
+        deal(address(weth), alice, params.fromTokenAmount);
+        vm.prank(alice);
+        weth.approve(address(router), params.fromTokenAmount);
+
         // Execute external swap
         vm.prank(alice);
-        router.externalSwap(mockExternalContract, callData, signature, minReturnAmount);
+        router.externalSwap(params);
 
         // Cleanup
         vm.clearMockedCalls();

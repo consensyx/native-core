@@ -49,4 +49,21 @@ interface IQuote {
         /// @notice Widget fee signature
         bytes widgetFeeSignature;
     }
+
+    struct ExternalSwap {
+        /// @notice The external contract address to call for the swap
+        address target;
+        /// @notice The token to be sold/swapped from
+        address fromToken;
+        /// @notice The address to approve tokens to
+        address spender;
+        /// @notice The amount of fromToken to be swapped
+        uint256 fromTokenAmount;
+        /// @notice Minimum amount of tokens expected to receive
+        uint256 minReturnAmount;
+        /// @notice Call data for the external swap
+        bytes callData;
+        /// @notice EIP-712 signature authorizing the swap
+        bytes signature;
+    }
 }

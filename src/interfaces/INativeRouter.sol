@@ -15,13 +15,9 @@ interface INativeRouter is IQuote {
         uint256 actualMinOutputAmount
     ) external payable;
 
-    /// @notice Execute an external swap with signed authorization
-    function externalSwap(
-        address target,
-        bytes calldata callData,
-        bytes calldata signature,
-        uint256 minReturnAmount
-    ) external payable;
+    /// @notice Execute an external swap through approved external sources
+    /// @param params The external swap parameters including signature
+    function externalSwap(ExternalSwap calldata params) external payable;
 
     /// @notice Emitted when ETH is refunded
     event RefundETH(address recipient, uint256 amount);
@@ -44,7 +40,7 @@ interface INativeRouter is IQuote {
     event UnwrapWETH9(address indexed recipient, uint256 amount);
 
     /// @notice Emitted when an external swap is executed
-    event ExternalSwap(address indexed target, bytes callData);
+    event ExternalSwaped(address indexed target, bytes callData);
 
     /// @notice Emitted when an external swap source's status is updated
     event ExternalSwapSourceUpdated(address indexed source, bool isActive);
