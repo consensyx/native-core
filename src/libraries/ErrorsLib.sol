@@ -23,6 +23,9 @@ library ErrorsLib {
     /// @notice Thrown when feature is paused
     error FeaturePaused();
 
+    /// @notice Thrown when token amount is insufficient
+    error InsufficientAmount();
+
     /// @notice Thrown when there are insufficient funding fees to withdraw
     error InsufficientFundingFees();
 

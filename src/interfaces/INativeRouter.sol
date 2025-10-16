@@ -40,7 +40,15 @@ interface INativeRouter is IQuote {
     event UnwrapWETH9(address indexed recipient, uint256 amount);
 
     /// @notice Emitted when an external swap is executed
-    event ExternalSwaped(address indexed target, bytes callData);
+    event ExternalSwaped(
+        address indexed source,
+        address indexed recipient,
+        address indexed sellerToken,
+        address buyerToken,
+        uint256 sellerTokenAmount,
+        uint256 buyerTokenAmount,
+        bytes16 quoteId
+    );
 
     /// @notice Emitted when an external swap source's status is updated
     event ExternalSwapSourceUpdated(address indexed source, bool isActive);

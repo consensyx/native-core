@@ -51,16 +51,24 @@ interface IQuote {
     }
 
     struct ExternalSwap {
-        /// @notice The external contract address to call for the swap
-        address target;
-        /// @notice The token to be sold/swapped from
-        address fromToken;
-        /// @notice The address to approve tokens to
+        /// @notice The external liquidity source contract
+        address source;
+        /// @notice The contract address that needs seller token approval (may differ from source)
         address spender;
-        /// @notice The amount of fromToken to be swapped
-        uint256 fromTokenAmount;
-        /// @notice Minimum amount of tokens expected to receive
-        uint256 minReturnAmount;
+        /// @notice The recipient of the buyerToken at the end of the swap
+        address recipient;
+        /// @notice The token to be sold/swapped from
+        address sellerToken;
+        /// @notice The amount of sellerToken to be swapped
+        uint256 sellerTokenAmount;
+        /// @notice The token that the trader buys
+        address buyerToken;
+        /// @notice Minimum amount of buyerToken expected to receive
+        uint256 amountOutMinimum;
+        /// @notice The Unix timestamp (in seconds) when the swap expires
+        uint256 deadlineTimestamp;
+        /// @notice Unique identifier for the quote
+        bytes16 quoteId;
         /// @notice Call data for the external swap
         bytes callData;
         /// @notice EIP-712 signature authorizing the swap

@@ -124,25 +124,53 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
     /// @notice Execute an external swap through external liquidity sources
     /// @param params The external swap parameters
     function externalSwap(ExternalSwap calldata params) external payable override nonReentrant whenNotPaused {
-        require(externalSwapSources[params.target], ErrorsLib.InvalidExternalSwapSource());
+        require(block.timestamp <= params.deadlineTimestamp, ErrorsLib.QuoteExpired());
+        require(externalSwapSources[params.source], ErrorsLib.InvalidExternalSwapSource());
 
         _verifyExternalSwap(params);
 
-        IERC20(params.fromToken).safeTransferFrom(msg.sender, address(this), params.fromTokenAmount);
+        bool isBuyerTokenNative = params.buyerToken == address(0);
 
-        // Approve the spender to use the exact amount
-        IERC20(params.fromToken).forceApprove(params.spender, params.fromTokenAmount);
+        // Record recipient's initial balance
+        uint256 initialBuyerTokenBalance =
+            isBuyerTokenNative ? params.recipient.balance : IERC20(params.buyerToken).balanceOf(params.recipient);
 
-        // Execute the external swap call
-        (bool success, bytes memory returnData) = params.target.call{value: msg.value}(params.callData);
+        // Handle sellerToken transfer and approval
+        if (params.sellerToken == address(0)) {
+            // Native token
+            require(msg.value == params.sellerTokenAmount, ErrorsLib.InvalidAmount());
+        } else {
+            // ERC20 token
+            require(msg.value == 0, ErrorsLib.UnexpectedMsgValue());
+            IERC20(params.sellerToken).safeTransferFrom(msg.sender, address(this), params.sellerTokenAmount);
+            // Approve the spender to use the exact amount
+            IERC20(params.sellerToken).safeApprove(params.spender, params.sellerTokenAmount);
+        }
+
+        // Execute external swap call
+        (bool success,) = params.source.call{value: msg.value}(params.callData);
+
         require(success, ErrorsLib.ExternalCallFailed());
 
-        uint256 returnAmount = abi.decode(returnData, (uint256));
+        // Check recipient's final balance
+        uint256 finalBuyerTokenBalance =
+            isBuyerTokenNative ? params.recipient.balance : IERC20(params.buyerToken).balanceOf(params.recipient);
+
+        uint256 receivedAmount = finalBuyerTokenBalance - initialBuyerTokenBalance;
         require(
-            returnAmount >= params.minReturnAmount, ErrorsLib.NotEnoughAmountOut(returnAmount, params.minReturnAmount)
+            receivedAmount >= params.amountOutMinimum,
+            ErrorsLib.NotEnoughAmountOut(receivedAmount, params.amountOutMinimum)
         );
 
-        emit ExternalSwaped(params.target, params.callData);
+        emit ExternalSwaped(
+            params.source,
+            params.recipient,
+            params.sellerToken,
+            params.buyerToken,
+            params.sellerTokenAmount,
+            receivedAmount,
+            params.quoteId
+        );
     }
 
     /// @notice Unwraps WETH9 to ETH by unwrapping all WETH currently in this contract
@@ -328,11 +356,15 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
             keccak256(
                 abi.encode(
                     EXTERNAL_SWAP_SIGNATURE_HASH,
-                    params.target,
-                    params.fromToken,
+                    params.source,
                     params.spender,
-                    params.fromTokenAmount,
-                    params.minReturnAmount,
+                    params.recipient,
+                    params.sellerToken,
+                    params.sellerTokenAmount,
+                    params.buyerToken,
+                    params.amountOutMinimum,
+                    params.deadlineTimestamp,
+                    params.quoteId,
                     params.callData
                 )
             )

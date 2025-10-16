@@ -48,21 +48,35 @@ library SignatureUtils {
     }
 
     function generateExternalSwapSignature(
-        address target,
-        address fromToken,
+        address source,
         address spender,
-        uint256 fromTokenAmount,
+        address recipient,
+        address sellerToken,
+        uint256 sellerTokenAmount,
+        address buyerToken,
+        uint256 amountOutMinimum,
+        uint256 deadlineTimestamp,
+        bytes16 quoteId,
         bytes memory callData,
-        uint256 minReturnAmount,
         address routerAddress
     ) internal view returns (bytes32) {
         bytes32 EXTERNAL_SWAP_SIGNATURE_HASH = keccak256(
-            "ExternalSwap(address target,address fromToken,address spender,uint256 fromTokenAmount,uint256 minReturnAmount,bytes callData)"
+            "ExternalSwap(address source,address spender,address recipient,address sellerToken,uint256 sellerTokenAmount,address buyerToken,uint256 amountOutMinimum,uint256 deadlineTimestamp,bytes16 quoteId,bytes callData)"
         );
 
         bytes32 structHash = keccak256(
             abi.encode(
-                EXTERNAL_SWAP_SIGNATURE_HASH, target, fromToken, spender, fromTokenAmount, minReturnAmount, callData
+                EXTERNAL_SWAP_SIGNATURE_HASH,
+                source,
+                spender,
+                recipient,
+                sellerToken,
+                sellerTokenAmount,
+                buyerToken,
+                amountOutMinimum,
+                deadlineTimestamp,
+                quoteId,
+                callData
             )
         );
 

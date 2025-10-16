@@ -50,5 +50,5 @@ bytes32 constant RFQ_QUOTE_WIDGET_SIGNATURE_HASH =
 
 /// @dev The EIP-712 typeHash for External Swap Authorization.
 bytes32 constant EXTERNAL_SWAP_SIGNATURE_HASH = keccak256(
-    "ExternalSwap(address target,address fromToken,address spender,uint256 fromTokenAmount,uint256 minReturnAmount,bytes callData)"
+    "ExternalSwap(address source,address spender,address recipient,address sellerToken,uint256 sellerTokenAmount,address buyerToken,uint256 amountOutMinimum,uint256 deadlineTimestamp,bytes16 quoteId,bytes callData)"
 );

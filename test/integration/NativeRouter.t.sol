@@ -6,8 +6,39 @@ import {NativeRFQPool} from "../../src/NativeRFQPool.sol";
 import {IQuote} from "../../src/interfaces/IQuote.sol";
 import {SignatureUtils} from "../helpers/SignatureUtils.sol";
 import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
+
+// Simple mock contract for testing external swaps
+contract MockSwapContract {
+    IERC20 public immutable token;
+
+    constructor(address _token) {
+        token = IERC20(_token);
+    }
+
+    // Mock swap function for ERC20 tokens
+    function mockSwap(address recipient, uint256 amount) external {
+        // Transfer tokens to recipient to simulate a swap
+        token.transfer(recipient, amount);
+    }
+
+    // Mock swap function for ETH to ERC20
+    function mockSwapETHToToken(address recipient, uint256 tokenAmount) external payable {
+        // Transfer tokens to recipient to simulate ETH -> Token swap
+        token.transfer(recipient, tokenAmount);
+    }
+
+    // Mock swap function for ERC20 to ETH
+    function mockSwapTokenToETH(address recipient, uint256 ethAmount) external {
+        // Transfer ETH to recipient to simulate Token -> ETH swap
+        payable(recipient).transfer(ethAmount);
+    }
+
+    // Allow contract to receive ETH
+    receive() external payable {}
+}
 
 contract NativeRouterTest is BaseTest {
     function setUp() public virtual override {
@@ -389,38 +420,43 @@ contract NativeRouterTest is BaseTest {
         console.log("========================================");
     }
 
-    function test_externalSwap_Success() public {
+    function test_externalSwap_ERC20_Success() public {
         setupPMM();
 
-        // Setup mock external contract address
-        address mockExternalContract = makeAddr("mockExternalContract");
+        // Deploy a simple mock contract that actually transfers tokens
+        MockSwapContract mockSwapContract = new MockSwapContract(address(USDC));
 
         // Setup test parameters
         uint256 returnAmount = 1000 * 10 ** 6; // 1000 USDC returned by external contract
         uint256 minReturnAmount = 900 * 10 ** 6; // 900 USDC minimum expected
 
-        // Use a simple mock function for testing purposes
+        // Give the mock contract some USDC to transfer
+        deal(address(USDC), address(mockSwapContract), returnAmount);
+
+        // Use the mock contract's swap function
         bytes memory callData = abi.encodeWithSignature(
-            "mockSwapFunction(uint256)",
-            1 ether // amountIn
+            "mockSwap(address,uint256)",
+            alice, // recipient
+            returnAmount // amount to transfer
         );
 
         // Add mock contract to whitelist
         vm.prank(deployer);
-        router.setExternalSwapSource(mockExternalContract, true);
-
-        // Mock the external contract call to return the expected amount
-        vm.mockCall(mockExternalContract, callData, abi.encode(returnAmount));
+        router.setExternalSwapSource(address(mockSwapContract), true);
 
         // Generate signature for external swap
         bytes32 digest = SignatureUtils.generateExternalSwapSignature(
-            mockExternalContract,
-            address(weth),
-            mockExternalContract,
-            1 ether,
-            callData,
-            minReturnAmount,
-            address(router)
+            address(mockSwapContract), // source
+            address(mockSwapContract), // spender
+            alice, // recipient
+            address(weth), // sellerToken
+            1 ether, // sellerTokenAmount
+            address(USDC), // buyerToken
+            minReturnAmount, // amountOutMinimum
+            block.timestamp + 1 hours, // deadlineTimestamp
+            bytes16(uint128(1)), // quoteId
+            callData, // callData
+            address(router) // routerAddress
         );
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
@@ -428,26 +464,184 @@ contract NativeRouterTest is BaseTest {
 
         // Create external swap parameters
         IQuote.ExternalSwap memory params = IQuote.ExternalSwap({
-            target: mockExternalContract,
-            fromToken: address(weth),
-            spender: mockExternalContract, // In this test, we'll use the same address for simplicity
-            fromTokenAmount: 1 ether,
-            minReturnAmount: minReturnAmount,
+            source: address(mockSwapContract),
+            spender: address(mockSwapContract),
+            recipient: alice,
+            sellerToken: address(weth),
+            sellerTokenAmount: 1 ether,
+            buyerToken: address(USDC),
+            amountOutMinimum: minReturnAmount,
+            deadlineTimestamp: block.timestamp + 1 hours,
+            quoteId: bytes16(uint128(1)),
             callData: callData,
             signature: signature
         });
 
         // Give Alice some WETH and approve router
-        deal(address(weth), alice, params.fromTokenAmount);
+        deal(address(weth), alice, params.sellerTokenAmount);
         vm.prank(alice);
-        weth.approve(address(router), params.fromTokenAmount);
+        weth.approve(address(router), params.sellerTokenAmount);
+
+        // Record alice's initial USDC balance
+        uint256 aliceInitialUsdc = USDC.balanceOf(alice);
 
         // Execute external swap
         vm.prank(alice);
         router.externalSwap(params);
 
-        // Cleanup
-        vm.clearMockedCalls();
+        // Verify the swap was successful
+        assertEq(USDC.balanceOf(alice), aliceInitialUsdc + returnAmount, "Alice should have received USDC");
+    }
+
+    function test_externalSwap_ETH_Success() public {
+        setupPMM();
+
+        // Deploy a mock contract that can handle ETH swaps
+        MockSwapContract mockSwapContract = new MockSwapContract(address(USDC));
+
+        // Setup test parameters
+        uint256 ethAmount = 1 ether; // 1 ETH to swap
+        uint256 returnAmount = 2000 * 10 ** 6; // 2000 USDC returned by external contract
+        uint256 minReturnAmount = 1800 * 10 ** 6; // 1800 USDC minimum expected
+
+        // Give the mock contract some USDC to transfer and ETH
+        deal(address(USDC), address(mockSwapContract), returnAmount);
+        deal(address(mockSwapContract), 10 ether); // Give contract some ETH
+
+        // Use the mock contract's ETH swap function
+        bytes memory callData = abi.encodeWithSignature(
+            "mockSwapETHToToken(address,uint256)",
+            alice, // recipient
+            returnAmount // amount to transfer
+        );
+
+        // Add mock contract to whitelist
+        vm.prank(deployer);
+        router.setExternalSwapSource(address(mockSwapContract), true);
+
+        // Generate signature for external swap (ETH as seller token)
+        bytes32 digest = SignatureUtils.generateExternalSwapSignature(
+            address(mockSwapContract), // source
+            address(mockSwapContract), // spender
+            alice, // recipient
+            address(0), // sellerToken (ETH)
+            ethAmount, // sellerTokenAmount
+            address(USDC), // buyerToken
+            minReturnAmount, // amountOutMinimum
+            block.timestamp + 1 hours, // deadlineTimestamp
+            bytes16(uint128(2)), // quoteId
+            callData, // callData
+            address(router) // routerAddress
+        );
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // Create external swap parameters
+        IQuote.ExternalSwap memory params = IQuote.ExternalSwap({
+            source: address(mockSwapContract),
+            spender: address(mockSwapContract),
+            recipient: alice,
+            sellerToken: address(0), // ETH
+            sellerTokenAmount: ethAmount,
+            buyerToken: address(USDC),
+            amountOutMinimum: minReturnAmount,
+            deadlineTimestamp: block.timestamp + 1 hours,
+            quoteId: bytes16(uint128(2)),
+            callData: callData,
+            signature: signature
+        });
+
+        // Give Alice some ETH (no need to approve for ETH)
+        deal(alice, ethAmount + 1 ether); // Extra ETH for gas
+
+        // Record alice's initial USDC balance
+        uint256 aliceInitialUsdc = USDC.balanceOf(alice);
+        uint256 aliceInitialEth = alice.balance;
+
+        // Execute external swap with ETH
+        vm.prank(alice);
+        router.externalSwap{value: ethAmount}(params);
+
+        // Verify the swap was successful
+        assertEq(USDC.balanceOf(alice), aliceInitialUsdc + returnAmount, "Alice should have received USDC");
+        assertEq(alice.balance, aliceInitialEth - ethAmount, "Alice should have spent ETH");
+    }
+
+    function test_externalSwap_ERC20_to_ETH_Success() public {
+        setupPMM();
+
+        // Deploy a mock contract that can handle token to ETH swaps
+        MockSwapContract mockSwapContract = new MockSwapContract(address(USDC));
+
+        // Setup test parameters
+        uint256 usdcAmount = 1000 * 10 ** 6; // 1000 USDC to swap
+        uint256 returnAmount = 0.5 ether; // 0.5 ETH returned by external contract
+        uint256 minReturnAmount = 0.45 ether; // 0.45 ETH minimum expected
+
+        // Give the mock contract some ETH to transfer
+        deal(address(mockSwapContract), returnAmount + 1 ether);
+
+        // Use the mock contract's token to ETH swap function
+        bytes memory callData = abi.encodeWithSignature(
+            "mockSwapTokenToETH(address,uint256)",
+            alice, // recipient
+            returnAmount // ETH amount to transfer
+        );
+
+        // Add mock contract to whitelist
+        vm.prank(deployer);
+        router.setExternalSwapSource(address(mockSwapContract), true);
+
+        // Generate signature for external swap (USDC to ETH)
+        bytes32 digest = SignatureUtils.generateExternalSwapSignature(
+            address(mockSwapContract), // source
+            address(mockSwapContract), // spender
+            alice, // recipient
+            address(USDC), // sellerToken
+            usdcAmount, // sellerTokenAmount
+            address(0), // buyerToken (ETH)
+            minReturnAmount, // amountOutMinimum
+            block.timestamp + 1 hours, // deadlineTimestamp
+            bytes16(uint128(3)), // quoteId
+            callData, // callData
+            address(router) // routerAddress
+        );
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // Create external swap parameters
+        IQuote.ExternalSwap memory params = IQuote.ExternalSwap({
+            source: address(mockSwapContract),
+            spender: address(mockSwapContract),
+            recipient: alice,
+            sellerToken: address(USDC),
+            sellerTokenAmount: usdcAmount,
+            buyerToken: address(0), // ETH
+            amountOutMinimum: minReturnAmount,
+            deadlineTimestamp: block.timestamp + 1 hours,
+            quoteId: bytes16(uint128(3)),
+            callData: callData,
+            signature: signature
+        });
+
+        // Give Alice some USDC and approve router
+        deal(address(USDC), alice, usdcAmount);
+        vm.prank(alice);
+        USDC.approve(address(router), usdcAmount);
+
+        // Record alice's initial balances
+        uint256 aliceInitialUsdc = USDC.balanceOf(alice);
+        uint256 aliceInitialEth = alice.balance;
+
+        // Execute external swap (USDC to ETH)
+        vm.prank(alice);
+        router.externalSwap(params);
+
+        // Verify the swap was successful
+        assertEq(USDC.balanceOf(alice), aliceInitialUsdc - usdcAmount, "Alice should have spent USDC");
+        assertEq(alice.balance, aliceInitialEth + returnAmount, "Alice should have received ETH");
     }
 
     // Struct to hold hop quote parameters
