@@ -40,6 +40,13 @@ contract MockSwapContract {
     receive() external payable {}
 }
 
+contract FailingContract {
+    // Function that always reverts
+    function failingFunction() external pure {
+        revert("This function always fails");
+    }
+}
+
 contract NativeRouterTest is BaseTest {
     function setUp() public virtual override {
         super.setUp();
@@ -420,7 +427,7 @@ contract NativeRouterTest is BaseTest {
         console.log("========================================");
     }
 
-    function test_externalSwap_ERC20_Success() public {
+    function test_externalSwap_ERC20_to_ERC20_Success() public {
         setupPMM();
 
         // Deploy a simple mock contract that actually transfers tokens
@@ -482,8 +489,9 @@ contract NativeRouterTest is BaseTest {
         vm.prank(alice);
         weth.approve(address(router), params.sellerTokenAmount);
 
-        // Record alice's initial USDC balance
+        // Record alice's initial balances
         uint256 aliceInitialUsdc = USDC.balanceOf(alice);
+        uint256 aliceInitialWeth = weth.balanceOf(alice);
 
         // Execute external swap
         vm.prank(alice);
@@ -491,9 +499,10 @@ contract NativeRouterTest is BaseTest {
 
         // Verify the swap was successful
         assertEq(USDC.balanceOf(alice), aliceInitialUsdc + returnAmount, "Alice should have received USDC");
+        assertEq(weth.balanceOf(alice), aliceInitialWeth - params.sellerTokenAmount, "Alice should have spent WETH");
     }
 
-    function test_externalSwap_ETH_Success() public {
+    function test_externalSwap_ETH_to_ERC20_Success() public {
         setupPMM();
 
         // Deploy a mock contract that can handle ETH swaps
@@ -642,6 +651,364 @@ contract NativeRouterTest is BaseTest {
         // Verify the swap was successful
         assertEq(USDC.balanceOf(alice), aliceInitialUsdc - usdcAmount, "Alice should have spent USDC");
         assertEq(alice.balance, aliceInitialEth + returnAmount, "Alice should have received ETH");
+    }
+
+    function test_externalSwap_RevertWhen_InvalidSignature() public {
+        setupPMM();
+
+        MockSwapContract mockSwapContract = new MockSwapContract(address(USDC));
+
+        // Add mock contract to whitelist
+        vm.prank(deployer);
+        router.setExternalSwapSource(address(mockSwapContract), true);
+
+        bytes memory callData = abi.encodeWithSignature("mockSwap(address,uint256)", alice, 1000 * 10 ** 6);
+
+        // Generate signature with WRONG private key
+        bytes32 digest = SignatureUtils.generateExternalSwapSignature(
+            address(mockSwapContract),
+            address(mockSwapContract),
+            alice,
+            address(weth),
+            1 ether,
+            address(USDC),
+            900 * 10 ** 6,
+            block.timestamp + 1 hours,
+            bytes16(uint128(1)),
+            callData,
+            address(router)
+        );
+
+        // Sign with wrong key (use alice's key instead of deployer's)
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(aliceKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        IQuote.ExternalSwap memory params = IQuote.ExternalSwap({
+            source: address(mockSwapContract),
+            spender: address(mockSwapContract),
+            recipient: alice,
+            sellerToken: address(weth),
+            sellerTokenAmount: 1 ether,
+            buyerToken: address(USDC),
+            amountOutMinimum: 900 * 10 ** 6,
+            deadlineTimestamp: block.timestamp + 1 hours,
+            quoteId: bytes16(uint128(1)),
+            callData: callData,
+            signature: signature
+        });
+
+        deal(address(weth), alice, 1 ether);
+        vm.prank(alice);
+        weth.approve(address(router), 1 ether);
+
+        vm.prank(alice);
+        vm.expectRevert(ErrorsLib.InvalidSignature.selector);
+        router.externalSwap(params);
+    }
+
+    function test_externalSwap_RevertWhen_DeadlineExpired() public {
+        setupPMM();
+
+        MockSwapContract mockSwapContract = new MockSwapContract(address(USDC));
+
+        vm.prank(deployer);
+        router.setExternalSwapSource(address(mockSwapContract), true);
+
+        bytes memory callData = abi.encodeWithSignature("mockSwap(address,uint256)", alice, 1000 * 10 ** 6);
+
+        // Use expired deadline
+        vm.warp(block.timestamp + 2 hours); // Move forward in time
+        uint256 expiredDeadline = block.timestamp - 1 hours;
+
+        bytes32 digest = SignatureUtils.generateExternalSwapSignature(
+            address(mockSwapContract),
+            address(mockSwapContract),
+            alice,
+            address(weth),
+            1 ether,
+            address(USDC),
+            900 * 10 ** 6,
+            expiredDeadline,
+            bytes16(uint128(1)),
+            callData,
+            address(router)
+        );
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        IQuote.ExternalSwap memory params = IQuote.ExternalSwap({
+            source: address(mockSwapContract),
+            spender: address(mockSwapContract),
+            recipient: alice,
+            sellerToken: address(weth),
+            sellerTokenAmount: 1 ether,
+            buyerToken: address(USDC),
+            amountOutMinimum: 900 * 10 ** 6,
+            deadlineTimestamp: expiredDeadline,
+            quoteId: bytes16(uint128(1)),
+            callData: callData,
+            signature: signature
+        });
+
+        vm.prank(alice);
+        vm.expectRevert(ErrorsLib.QuoteExpired.selector);
+        router.externalSwap(params);
+    }
+
+    function test_externalSwap_RevertWhen_InvalidExternalSwapSource() public {
+        setupPMM();
+
+        // Use non-whitelisted contract
+        address nonWhitelistedContract = makeAddr("nonWhitelistedContract");
+
+        bytes memory callData = abi.encodeWithSignature("mockSwap(address,uint256)", alice, 1000 * 10 ** 6);
+
+        bytes32 digest = SignatureUtils.generateExternalSwapSignature(
+            nonWhitelistedContract,
+            nonWhitelistedContract,
+            alice,
+            address(weth),
+            1 ether,
+            address(USDC),
+            900 * 10 ** 6,
+            block.timestamp + 1 hours,
+            bytes16(uint128(1)),
+            callData,
+            address(router)
+        );
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        IQuote.ExternalSwap memory params = IQuote.ExternalSwap({
+            source: nonWhitelistedContract,
+            spender: nonWhitelistedContract,
+            recipient: alice,
+            sellerToken: address(weth),
+            sellerTokenAmount: 1 ether,
+            buyerToken: address(USDC),
+            amountOutMinimum: 900 * 10 ** 6,
+            deadlineTimestamp: block.timestamp + 1 hours,
+            quoteId: bytes16(uint128(1)),
+            callData: callData,
+            signature: signature
+        });
+
+        vm.prank(alice);
+        vm.expectRevert(ErrorsLib.InvalidExternalSwapSource.selector);
+        router.externalSwap(params);
+    }
+
+    function test_externalSwap_RevertWhen_NotEnoughAmountOut() public {
+        setupPMM();
+
+        MockSwapContract mockSwapContract = new MockSwapContract(address(USDC));
+
+        vm.prank(deployer);
+        router.setExternalSwapSource(address(mockSwapContract), true);
+
+        // Mock contract will transfer only 500 USDC, but we expect 900 USDC minimum
+        uint256 actualReturnAmount = 500 * 10 ** 6;
+        uint256 minReturnAmount = 900 * 10 ** 6;
+
+        deal(address(USDC), address(mockSwapContract), actualReturnAmount);
+
+        bytes memory callData = abi.encodeWithSignature("mockSwap(address,uint256)", alice, actualReturnAmount);
+
+        bytes32 digest = SignatureUtils.generateExternalSwapSignature(
+            address(mockSwapContract),
+            address(mockSwapContract),
+            alice,
+            address(weth),
+            1 ether,
+            address(USDC),
+            minReturnAmount,
+            block.timestamp + 1 hours,
+            bytes16(uint128(1)),
+            callData,
+            address(router)
+        );
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        IQuote.ExternalSwap memory params = IQuote.ExternalSwap({
+            source: address(mockSwapContract),
+            spender: address(mockSwapContract),
+            recipient: alice,
+            sellerToken: address(weth),
+            sellerTokenAmount: 1 ether,
+            buyerToken: address(USDC),
+            amountOutMinimum: minReturnAmount,
+            deadlineTimestamp: block.timestamp + 1 hours,
+            quoteId: bytes16(uint128(1)),
+            callData: callData,
+            signature: signature
+        });
+
+        deal(address(weth), alice, 1 ether);
+        vm.prank(alice);
+        weth.approve(address(router), 1 ether);
+
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(ErrorsLib.NotEnoughAmountOut.selector, actualReturnAmount, minReturnAmount)
+        );
+        router.externalSwap(params);
+    }
+
+    function test_externalSwap_RevertWhen_ExternalCallFailed() public {
+        setupPMM();
+
+        // Create a failing contract that will revert
+        FailingContract failingContract = new FailingContract();
+
+        vm.prank(deployer);
+        router.setExternalSwapSource(address(failingContract), true);
+
+        // This callData will cause the contract to revert
+        bytes memory callData = abi.encodeWithSignature("failingFunction()");
+
+        bytes32 digest = SignatureUtils.generateExternalSwapSignature(
+            address(failingContract),
+            address(failingContract),
+            alice,
+            address(weth),
+            1 ether,
+            address(USDC),
+            900 * 10 ** 6,
+            block.timestamp + 1 hours,
+            bytes16(uint128(1)),
+            callData,
+            address(router)
+        );
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        IQuote.ExternalSwap memory params = IQuote.ExternalSwap({
+            source: address(failingContract),
+            spender: address(failingContract),
+            recipient: alice,
+            sellerToken: address(weth),
+            sellerTokenAmount: 1 ether,
+            buyerToken: address(USDC),
+            amountOutMinimum: 900 * 10 ** 6,
+            deadlineTimestamp: block.timestamp + 1 hours,
+            quoteId: bytes16(uint128(1)),
+            callData: callData,
+            signature: signature
+        });
+
+        deal(address(weth), alice, 1 ether);
+        vm.prank(alice);
+        weth.approve(address(router), 1 ether);
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(ErrorsLib.ExternalCallFailed.selector));
+        router.externalSwap(params);
+    }
+
+    function test_externalSwap_RevertWhen_ETH_InvalidAmount() public {
+        setupPMM();
+
+        MockSwapContract mockSwapContract = new MockSwapContract(address(USDC));
+
+        vm.prank(deployer);
+        router.setExternalSwapSource(address(mockSwapContract), true);
+
+        bytes memory callData = abi.encodeWithSignature("mockSwapETHToToken(address,uint256)", alice, 1000 * 10 ** 6);
+
+        bytes32 digest = SignatureUtils.generateExternalSwapSignature(
+            address(mockSwapContract),
+            address(mockSwapContract),
+            alice,
+            address(0),
+            1 ether,
+            address(USDC),
+            900 * 10 ** 6,
+            block.timestamp + 1 hours,
+            bytes16(uint128(1)),
+            callData,
+            address(router)
+        );
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        IQuote.ExternalSwap memory params = IQuote.ExternalSwap({
+            source: address(mockSwapContract),
+            spender: address(mockSwapContract),
+            recipient: alice,
+            sellerToken: address(0),
+            sellerTokenAmount: 1 ether,
+            buyerToken: address(USDC),
+            amountOutMinimum: 900 * 10 ** 6,
+            deadlineTimestamp: block.timestamp + 1 hours,
+            quoteId: bytes16(uint128(1)),
+            callData: callData,
+            signature: signature
+        });
+
+        deal(alice, 2 ether);
+
+        // Send wrong amount of ETH (0.5 ETH instead of 1 ETH)
+        vm.prank(alice);
+        vm.expectRevert(ErrorsLib.InvalidAmount.selector);
+        router.externalSwap{value: 0.5 ether}(params);
+    }
+
+    function test_externalSwap_RevertWhen_ERC20_UnexpectedMsgValue() public {
+        setupPMM();
+
+        MockSwapContract mockSwapContract = new MockSwapContract(address(USDC));
+
+        vm.prank(deployer);
+        router.setExternalSwapSource(address(mockSwapContract), true);
+
+        bytes memory callData = abi.encodeWithSignature("mockSwap(address,uint256)", alice, 1000 * 10 ** 6);
+
+        bytes32 digest = SignatureUtils.generateExternalSwapSignature(
+            address(mockSwapContract),
+            address(mockSwapContract),
+            alice,
+            address(weth),
+            1 ether,
+            address(USDC),
+            900 * 10 ** 6,
+            block.timestamp + 1 hours,
+            bytes16(uint128(1)),
+            callData,
+            address(router)
+        );
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        IQuote.ExternalSwap memory params = IQuote.ExternalSwap({
+            source: address(mockSwapContract),
+            spender: address(mockSwapContract),
+            recipient: alice,
+            sellerToken: address(weth),
+            sellerTokenAmount: 1 ether,
+            buyerToken: address(USDC),
+            amountOutMinimum: 900 * 10 ** 6,
+            deadlineTimestamp: block.timestamp + 1 hours,
+            quoteId: bytes16(uint128(1)),
+            callData: callData,
+            signature: signature
+        });
+
+        deal(address(weth), alice, 1 ether);
+        deal(alice, 1 ether);
+        vm.prank(alice);
+        weth.approve(address(router), 1 ether);
+
+        // Send ETH when using ERC20 sellerToken
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(ErrorsLib.UnexpectedMsgValue.selector));
+        router.externalSwap{value: 0.1 ether}(params);
     }
 
     // Struct to hold hop quote parameters
