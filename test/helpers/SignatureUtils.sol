@@ -76,7 +76,7 @@ library SignatureUtils {
                 amountOutMinimum,
                 deadlineTimestamp,
                 quoteId,
-                callData
+                keccak256(callData)
             )
         );
 

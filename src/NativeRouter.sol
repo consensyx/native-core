@@ -143,7 +143,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
             // ERC20 token
             require(msg.value == 0, ErrorsLib.UnexpectedMsgValue());
             IERC20(params.sellerToken).safeTransferFrom(msg.sender, address(this), params.sellerTokenAmount);
-            // Approve the spender to use the exact amount
+            // Approve the spender to use exact amount
             IERC20(params.sellerToken).safeApprove(params.spender, params.sellerTokenAmount);
         }
 
@@ -162,7 +162,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
             ErrorsLib.NotEnoughAmountOut(receivedAmount, params.amountOutMinimum)
         );
 
-        emit ExternalSwaped(
+        emit ExternalSwapped(
             params.source,
             params.recipient,
             params.sellerToken,
@@ -365,7 +365,7 @@ contract NativeRouter is INativeRouter, EIP712, Ownable2Step, Pausable, Multical
                     params.amountOutMinimum,
                     params.deadlineTimestamp,
                     params.quoteId,
-                    params.callData
+                    keccak256(params.callData)
                 )
             )
         );
