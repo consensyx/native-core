@@ -26,7 +26,7 @@ contract DeployLPTokenScript is Script {
             )
         );
         string memory underlyingName = string.concat("Native-LP: ", underlying.name());
-        string memory underlyingSymbol = string.concat("NT-LP-", underlying.symbol());
+        string memory underlyingSymbol = string.concat("NLP-", underlying.symbol());
 
         // 2. read creditVault address
         string memory coreDeployment =

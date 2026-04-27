@@ -18,6 +18,7 @@ contract DeployCoreScript is Script {
         address operator = vm.envAddress("OPERATOR");
         address widgetSigner = vm.envAddress("WIDGET_SIGNER");
         address feeWithdrawer = vm.envAddress("FEE_WITHDRAWER");
+        address poolSigner = vm.envAddress("POOL_SIGNER");
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -50,7 +51,10 @@ contract DeployCoreScript is Script {
         router.setSigner(widgetSigner, true);
         router.setNativePool(address(rfqPool), true);
 
-        // 7. Save deployments
+        // 7. Set rfqpool configuration
+        rfqPool.setSigner(poolSigner, true);
+
+        // 8. Save deployments
         string memory key = "Core";
         vm.serializeAddress(key, "CreditVault", address(creditVault));
         vm.serializeAddress(key, "NativeRouter", address(router));
